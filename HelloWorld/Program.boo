@@ -8,4 +8,6 @@ class Hello:
 		return Get('World')
 
 	def Get(name as string):
-		return "Hello, $(name)!!"
+		return "Hello, $(name)!"
+
+Application('http://localhost:2468/').Run()

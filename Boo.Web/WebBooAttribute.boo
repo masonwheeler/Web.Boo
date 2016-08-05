@@ -1,7 +1,11 @@
 ﻿namespace Boo.Web
 
+import System.Linq.Enumerable
 import Boo.Lang.Compiler
 import Boo.Lang.Compiler.Ast
+import Boo.Lang.Compiler.TypeSystem.Internal
+import Boo.Lang.Environments
+import Boo.Lang.Compiler.TypeSystem.Services
 
 //based on System.Net.HttpListener
 //see also https://bitbucket.org/lorenzopolidori/http-form-parser/src
@@ -49,6 +53,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 		_attr = attr
 
 	override def OnClassDefinition(node as ClassDefinition):
+		node.BaseTypes.Reject({tr | tr.ToString() == 'object'})
 		assert node.BaseTypes.Count == 0, "WebBoo attribute can't be applied to classes with a base type"
 		node.BaseTypes.Add(TypeReference.Lift(Boo.Web.WebBooClass))
 		super(node)
@@ -58,13 +63,13 @@ private class WebBooTransformer(DepthFirstTransformer):
 					super(context)
 			|]
 			node.Members.Add(ctr)
-		unless _constructorFound:
+		unless _mainGetFound:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		
 		BuildDispatch(node)
 		var init = [|
 			initialization:
-				Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r | $(ReferenceExpression(node.Name))(r)})
+				Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r | return $(ReferenceExpression(node.Name))(r)})
 		|]
 		node.GetAncestor[of Module]().Globals.Add(init)
 
@@ -111,7 +116,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 			if arg1.Type is null:
 				arg1.Type = ARGS_DICT_TYPE.CleanClone()
 				return true
-			if arg1.Type.Matches(STRING_TYPE):
+			if arg1.Type.ToString() == 'string':
 				_singleGetMatch = true
 				return true
 			if arg1.Type.Matches(MATCHES_TYPE):
@@ -129,22 +134,32 @@ private class WebBooTransformer(DepthFirstTransformer):
 	private def OnHeadMethod(node as Method):
 		pass
 
+	private def EnsureLinq(node as ClassDefinition):
+		var module = node.GetAncestor[of Module]()
+		unless module.Imports.Any({imp | imp.Expression.ToString() == 'System.Linq.Enumerable'}):
+			var newImport = [|import System.Linq.Enumerable|]
+			newImport.Entity = ImportedNamespace(newImport, My[of NameResolutionService].Instance.ResolveQualifiedName(newImport.Namespace))
+			module.Imports.Add(newImport)
+
 	private def BuildDispatch(node as ClassDefinition):
 		var dispatch = [|
-			override protected internal def _DispatchGet_(path as string) as string:
+			override protected def _DispatchGet_(path as string) as string:
 				pass
 		|]
 		var body = dispatch.Body
 		if _attr.Regex is not null:
-			body.Add([|var matches = _regex.Matches(path).Select({m | m.Value}).ToArray()|])
+			EnsureLinq(node)
+			body.Add([|var matches = $(_attr.Regex).Matches(path).Cast[of System.Text.RegularExpressions.Match]()\
+				.Select({m | return m.Value}).Where({s | return not string.IsNullOrEmpty(s)}).ToArray()|])
+			var noMatch = IfStatement([|matches.Length == 0|], Block(), Block())
+			noMatch.TrueBlock.Add([|return Get()|])
+			body.Add(noMatch)
+			body = noMatch.FalseBlock
 			if self._singleGetMatch:
-				var singleGet = [|
-					if matches.Length == 1:
-						return Get(matches[0])
-				|]
+				var singleGet = IfStatement([|matches.Length == 1|], Block(), Block())
+				singleGet.TrueBlock.Add([|return Get(matches[0])|])
 				body.Add(singleGet)
-				body = Block()
-				singleGet.FalseBlock = body
+				body = singleGet.FalseBlock
 			body.Add([|return Get(matches)|])
 			unless _singleGetMatch or _getMatches:
 				CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) specifies a regex but no Get methods to match a regex"))
@@ -152,3 +167,4 @@ private class WebBooTransformer(DepthFirstTransformer):
 			body.Add([|return Get(ParseQueryString(Request.QueryString))|])
 		else:
 			body.Add([|return Get()|])
+		node.Members.Add(dispatch)

@@ -54,22 +54,26 @@ class Application:
 			path = path[:-1]
 		
 		var subpaths = ( ('',) if path == '' else path.Split(*(char('/'),)) )
-		subpaths[subpaths.Length - 1] += '/'
 		_dispatcher.Register(subpaths, loader)
 	
 	_prefixes as (string)
 	
 	public def constructor([Required] *prefixes as (string)):
 		raise "Application requires at least one prefix to run" if prefixes.Length == 0
+		_prefixes = prefixes
 	
 	public def Run():
-			listener = System.Net.HttpListener()
-			for prefix in _prefixes:
-				listener.Prefixes.Add(prefix)
+		listener = System.Net.HttpListener()
+		for prefix in _prefixes:
+			listener.Prefixes.Add(prefix)
+		listener.Start()
+		while true:
 			var context = listener.GetContext()
 			var request = context.Request
 			result as string
-			if _dispatcher.Dispatch(request.RawUrl.Split(*(char('/'),)), request, result):
-				using writer = System.IO.StringWriter(context.Response.OutputStream):
+			var paths = request.RawUrl.Split(*(char('/'),))
+			paths = paths[:-1] if paths[paths.Length - 1] == ''
+			if _dispatcher.Dispatch(paths, request, result):
+				using writer = System.IO.StreamWriter(context.Response.OutputStream):
 					writer.Write(result)
-				context.Response.OutputStream.Close()
+			context.Response.OutputStream.Close()
