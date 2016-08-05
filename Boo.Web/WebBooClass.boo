@@ -24,3 +24,14 @@ class WebBooClass:
 
 	abstract protected internal def _DispatchGet_(path as string) as string:
 		pass
+	
+	protected def ParseQueryString(query as string) as System.Collections.Generic.IDictionary[of string, string]:
+		var pairs = query.Split(*(char('&'),))
+		var result = System.Collections.Generic.Dictionary[of string, string]()
+		for pair in pairs:
+			try:
+				key as string, value as string = pair.Split(*(char('='),))
+				result[key] = value
+			except as IndexOutOfRangeException:
+				pass
+		return result

@@ -7,10 +7,23 @@ import Boo.Lang.Compiler.Ast
 //see also https://bitbucket.org/lorenzopolidori/http-form-parser/src
 
 class WebBooAttribute(AbstractAstAttribute):
+	[Getter(Path)]
+	private _path as string
+
+	[Property(Regex)]
+	private _regex as RELiteralExpression
+
+	[Property(HasQueryString)]
+	private _hasQueryString as bool
+
+	def constructor(path as StringLiteralExpression):
+		super()
+		_path = path.Value
+
 	override def Apply(node as Node):
 		assert node isa ClassDefinition
 		var webBooNode = node as ClassDefinition
-		webBooNode.Accept(WebBooTransformer())
+		webBooNode.Accept(WebBooTransformer(self))
 
 private class WebBooTransformer(DepthFirstTransformer):
 	private static final METHODS = System.Collections.Generic.List[of string](('Get', 'Post', 'Head'))
@@ -29,11 +42,11 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	private _getMatches as bool
 
-	[Property(Regex)]
-	private _regex as System.Text.RegularExpressions.Regex
+	private _attr as WebBooAttribute
 
-	[Property(HasQueryString)]
-	private _hasQueryString as bool
+	def constructor(attr as WebBooAttribute):
+		super()
+		_attr = attr
 
 	override def OnClassDefinition(node as ClassDefinition):
 		assert node.BaseTypes.Count == 0, "WebBoo attribute can't be applied to classes with a base type"
@@ -49,6 +62,11 @@ private class WebBooTransformer(DepthFirstTransformer):
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		
 		BuildDispatch(node)
+		var init = [|
+			initialization:
+				Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r | $(ReferenceExpression(node.Name))(r)})
+		|]
+		node.GetAncestor[of Module]().Globals.Add(init)
 
 	override def OnConstructor(node as Constructor):
 		raise "WebBoo class's constructor must take 0 parameters" if node.Parameters.Count > 0
@@ -117,7 +135,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 				pass
 		|]
 		var body = dispatch.Body
-		if self._regex is not null:
+		if _attr.Regex is not null:
 			body.Add([|var matches = _regex.Matches(path).Select({m | m.Value}).ToArray()|])
 			if self._singleGetMatch:
 				var singleGet = [|
@@ -130,17 +148,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 			body.Add([|return Get(matches)|])
 			unless _singleGetMatch or _getMatches:
 				CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) specifies a regex but no Get methods to match a regex"))
-		elif _hasQueryString:
-			body.Add([|return Get(ParseQS(Request.QueryString))|])
+		elif _attr.HasQueryString:
+			body.Add([|return Get(ParseQueryString(Request.QueryString))|])
 		else:
 			body.Add([|return Get()|])
-
-/*
-[WebBoo('/', Regex: /(.*)/)]
-class Hello:
-	def Get():
-		return Get('World')"
-
-	def Get(name as string):
-		return "Hello, $(name)!!"
-*/
