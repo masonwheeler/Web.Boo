@@ -18,7 +18,10 @@ class WebBooAttribute(AbstractAstAttribute):
 	private _regex as RELiteralExpression
 
 	[Property(HasQueryString)]
-	private _hasQueryString as bool
+	private _hasQueryString = BoolLiteralExpression(false)
+
+	[Property(FileServer)]
+	private _fileServer = BoolLiteralExpression(false)
 
 	def constructor(path as StringLiteralExpression):
 		super()
@@ -31,8 +34,8 @@ class WebBooAttribute(AbstractAstAttribute):
 
 private class WebBooTransformer(DepthFirstTransformer):
 	private static final METHODS = System.Collections.Generic.List[of string](('Get', 'Post', 'Head'))
-	private static final STRING_TYPE = TypeReference.Lift(string)
-	private static final MATCHES_TYPE = TypeReference.Lift(typeof(string*))
+	private static final STRING_TYPE = SimpleTypeReference('string')
+	private static final MATCHES_TYPE = GenericTypeReference('System.Collections.Generic.IEnumerable', STRING_TYPE.CleanClone())
 	private static final STREAM_RETURN_TYPE = TypeReference.Lift(System.IO.Stream)
 	private static final ARGS_DICT_TYPE = TypeReference.Lift(System.Collections.Generic.IDictionary[of string, string])
 
@@ -66,6 +69,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 		unless _mainGetFound:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		
+		SetFileServer(node) if _attr.FileServer.Value
 		BuildDispatch(node)
 		var init = [|
 			initialization:
@@ -105,6 +109,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 		if node.ReturnType is not null and not ((node.ReturnType.Matches(STRING_TYPE)) or (node.ReturnType.Matches(STREAM_RETURN_TYPE))):
 			raise "HTTP methods must return String or Stream"
 		node.Modifiers = node.Modifiers | TypeMemberModifiers.Override | TypeMemberModifiers.Public
+		node.ReturnType = TypeReference.Lift(ResponseData)
 
 	private def IsGetMethod(node as Method) as bool:
 		var args = node.Parameters
@@ -116,7 +121,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 			if arg1.Type is null:
 				arg1.Type = ARGS_DICT_TYPE.CleanClone()
 				return true
-			if arg1.Type.ToString() == 'string':
+			if arg1.Type.Matches(STRING_TYPE):
 				_singleGetMatch = true
 				return true
 			if arg1.Type.Matches(MATCHES_TYPE):
@@ -143,7 +148,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	private def BuildDispatch(node as ClassDefinition):
 		var dispatch = [|
-			override protected def _DispatchGet_(path as string) as string:
+			override protected def _DispatchGet_(path as string) as ResponseData:
 				pass
 		|]
 		var body = dispatch.Body
@@ -163,8 +168,21 @@ private class WebBooTransformer(DepthFirstTransformer):
 			body.Add([|return Get(matches)|])
 			unless _singleGetMatch or _getMatches:
 				CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) specifies a regex but no Get methods to match a regex"))
-		elif _attr.HasQueryString:
+		elif _attr.HasQueryString.Value:
 			body.Add([|return Get(ParseQueryString(Request.QueryString))|])
 		else:
 			body.Add([|return Get()|])
 		node.Members.Add(dispatch)
+
+	private def SetFileServer(node as ClassDefinition):
+		if _getMatches:
+			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a FileServer with a Get(string*) method already defined"))
+			return
+		var fs = [|
+			override public def Get(values as string*) as ResponseData:
+				return SendFile(string.Join('', values))
+		|]
+		node.Members.Add(fs)
+		if _attr.Regex is null:
+			_attr.Regex = RELiteralExpression('/(.*)/')
+		_getMatches = true

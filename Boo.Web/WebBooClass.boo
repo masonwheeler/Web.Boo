@@ -4,25 +4,28 @@ import System
 import System.Net
 
 class WebBooClass:
+	
+	protected static final EXE_DIR = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
+	
 	[Getter(Request)]
 	private _request as HttpListenerRequest
 	
 	def constructor(context as System.Net.HttpListenerRequest):
 		_request = context
 	
-	virtual public def Get() as string:
+	virtual public def Get() as ResponseData:
 		raise System.IO.FileNotFoundException()
 
-	virtual public def Get(values as System.Collections.Generic.IDictionary[of string, string]) as string:
+	virtual public def Get(values as System.Collections.Generic.IDictionary[of string, string]) as ResponseData:
 		return Get()
 
-	virtual public def Get(value as string) as string:
+	virtual public def Get(value as string) as ResponseData:
 		return Get()
 		
-	virtual public def Get(values as string*) as string:
+	virtual public def Get(values as string*) as ResponseData:
 		return Get()
 
-	abstract protected internal def _DispatchGet_(path as string) as string:
+	abstract protected internal def _DispatchGet_(path as string) as ResponseData:
 		pass
 	
 	protected def ParseQueryString(query as string) as System.Collections.Generic.IDictionary[of string, string]:

@@ -2,12 +2,13 @@
 
 import System
 import System.Collections.Generic
+import System.IO
 import System.Net
 
 internal interface IDispatcher:
 	def Register(paths as (string), loader as Func[of HttpListenerRequest, WebBooClass])
 	
-	def Dispatch(paths as (string), request as HttpListenerRequest, ref result as string) as bool
+	def Dispatch(paths as (string), request as HttpListenerRequest, ref result as ResponseData) as bool
 
 class Application:
 	
@@ -24,19 +25,19 @@ class Application:
 			else:
 				_pathMap[subpaths[0]] = RequestDispatcher(loader)
 		
-		def Dispatch(paths as (string), request as HttpListenerRequest, ref result as string) as bool:
+		def Dispatch(paths as (string), request as HttpListenerRequest, ref result as ResponseData) as bool:
 			return false if paths.Length == 0
 			dispatcher as IDispatcher
 			return false unless _pathMap.TryGetValue(paths[0], dispatcher)
 			return dispatcher.Dispatch(paths[1:], request, result)
-	
+		
 	private class RequestDispatcher(SubpathDispatcher, IDispatcher):
 		_loader as Func[of HttpListenerRequest, WebBooClass]
 		
 		def constructor(loader as Func[of HttpListenerRequest, WebBooClass]):
 			_loader = loader
 		
-		def Dispatch(paths as (string), request as HttpListenerRequest, ref result as string) as bool:
+		def Dispatch(paths as (string), request as HttpListenerRequest, ref result as ResponseData) as bool:
 			var worked = false
 			if paths.Length > 0:
 				worked = super(paths, request, result)
@@ -70,10 +71,19 @@ class Application:
 		while true:
 			var context = listener.GetContext()
 			var request = context.Request
-			result as string
+			result as ResponseData
 			var paths = request.RawUrl.Split(*(char('/'),))
 			paths = paths[:-1] if paths[paths.Length - 1] == ''
 			if _dispatcher.Dispatch(paths, request, result):
-				using writer = System.IO.StreamWriter(context.Response.OutputStream):
-					writer.Write(result)
+				if result is not null:
+					if result.AsString is not null:
+						using writer = System.IO.StreamWriter(context.Response.OutputStream):
+							writer.Write(result.AsString)
+					elif result.AsStream is not null:
+						result.AsStream.CopyTo(context.Response.OutputStream)
+						result.AsStream.Close()
+					elif result.AsJson is not null:
+						context.Response.ContentType = 'application/json'
+						using writer = System.IO.StreamWriter(context.Response.OutputStream):
+							writer.Write(result.AsJson.ToString())
 			context.Response.OutputStream.Close()
