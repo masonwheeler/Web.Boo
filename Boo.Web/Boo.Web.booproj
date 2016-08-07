@@ -46,10 +46,16 @@
   <ItemGroup>
     <Compile Include="Application.boo" />
     <Compile Include="AssemblyInfo.boo" />
+    <Compile Include="HttpUtils\HttpContentParser.boo" />
+    <Compile Include="HttpUtils\HttpMultipartParser.boo" />
+    <Compile Include="HttpUtils\Misc.boo" />
     <Compile Include="ResponseData.boo" />
     <Compile Include="SendFile.boo" />
     <Compile Include="WebBooAttribute.boo" />
     <Compile Include="WebBooClass.boo" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="HttpUtils" />
   </ItemGroup>
   <Import Project="$(BooBinPath)\Boo.Microsoft.Build.targets" />
 </Project>

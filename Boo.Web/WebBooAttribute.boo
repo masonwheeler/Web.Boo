@@ -129,12 +129,22 @@ private class WebBooTransformer(DepthFirstTransformer):
 				return true
 		return false
 
+	private def IsPostMethod(node as Method) as bool:
+		var args = node.Parameters
+		if args.Count == 1:
+			var arg1 = args[0]
+			if arg1.Type is null:
+				arg1.Type = ARGS_DICT_TYPE.CleanClone()
+				return true
+		return false
+
 	private def OnGetMethod(node as Method):
 		return unless IsGetMethod(node)
 		SetFlags(node)
 	
 	private def OnPostMethod(node as Method):
-		pass
+		return unless IsPostMethod(node)
+		SetFlags(node)
 		
 	private def OnHeadMethod(node as Method):
 		pass
@@ -169,7 +179,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 			unless _singleGetMatch or _getMatches:
 				CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) specifies a regex but no Get methods to match a regex"))
 		elif _attr.HasQueryString.Value:
-			body.Add([|return Get(ParseQueryString(Request.QueryString))|])
+			body.Add([|return Get(ParseQueryString())|])
 		else:
 			body.Add([|return Get()|])
 		node.Members.Add(dispatch)

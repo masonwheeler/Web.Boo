@@ -46,6 +46,9 @@ class Application:
 			if request.HttpMethod == 'GET':
 				result = handler._DispatchGet_(string.Join('/', paths))
 				return true
+			elif request.HttpMethod == 'POST':
+				result = handler._DispatchPost_(string.Join('/', paths))
+				return true
 			return false
 
 	static _dispatcher = SubpathDispatcher()
@@ -63,6 +66,18 @@ class Application:
 		raise "Application requires at least one prefix to run" if prefixes.Length == 0
 		_prefixes = prefixes
 	
+	private def HandleResponse(result as ResponseData, response as HttpListenerResponse):
+		if result.AsString is not null:
+			using writer = System.IO.StreamWriter(response.OutputStream):
+				writer.Write(result.AsString)
+		elif result.AsStream is not null:
+			result.AsStream.CopyTo(response.OutputStream)
+			result.AsStream.Close()
+		elif result.AsJson is not null:
+			response.ContentType = 'application/json'
+			using writer = System.IO.StreamWriter(response.OutputStream):
+				writer.Write(result.AsJson.ToString())
+	
 	public def Run():
 		listener = System.Net.HttpListener()
 		for prefix in _prefixes:
@@ -72,18 +87,10 @@ class Application:
 			var context = listener.GetContext()
 			var request = context.Request
 			result as ResponseData
-			var paths = request.RawUrl.Split(*(char('/'),))
+			var url = request.RawUrl.Split(*(char('?'),))[0]
+			var paths = url.Split(*(char('/'),))
 			paths = paths[:-1] if paths[paths.Length - 1] == ''
 			if _dispatcher.Dispatch(paths, request, result):
 				if result is not null:
-					if result.AsString is not null:
-						using writer = System.IO.StreamWriter(context.Response.OutputStream):
-							writer.Write(result.AsString)
-					elif result.AsStream is not null:
-						result.AsStream.CopyTo(context.Response.OutputStream)
-						result.AsStream.Close()
-					elif result.AsJson is not null:
-						context.Response.ContentType = 'application/json'
-						using writer = System.IO.StreamWriter(context.Response.OutputStream):
-							writer.Write(result.AsJson.ToString())
+					HandleResponse(result, context.Response)
 			context.Response.OutputStream.Close()
