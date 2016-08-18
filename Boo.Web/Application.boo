@@ -90,12 +90,15 @@ class Application:
 		listener.Start()
 		while true:
 			var context = listener.GetContext()
-			var request = context.Request
-			result as ResponseData
-			var url = request.RawUrl.Split(*(char('?'),))[0]
-			var paths = url.Split(*(char('/'),))
-			paths = paths[:-1] if paths[paths.Length - 1] == ''
-			if _dispatcher.Dispatch(paths, request, result):
-				if result is not null:
-					HandleResponse(result, context.Response)
+			try:
+				var request = context.Request
+				result as ResponseData
+				var url = request.RawUrl.Split(*(char('?'),))[0]
+				var paths = url.Split(*(char('/'),))
+				paths = paths[:-1] if paths[paths.Length - 1] == ''
+				if _dispatcher.Dispatch(paths, request, result):
+					if result is not null:
+						HandleResponse(result, context.Response)
+			except:
+				context.Response.StatusCode = 500
 			context.Response.OutputStream.Close()
