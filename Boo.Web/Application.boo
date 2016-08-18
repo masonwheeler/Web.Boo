@@ -77,6 +77,11 @@ class Application:
 			response.ContentType = 'application/json'
 			using writer = System.IO.StreamWriter(response.OutputStream):
 				writer.Write(result.AsJson.ToString())
+		elif result.AsRedirect is not null:
+			var red = result.AsRedirect
+			response.StatusCode = red.Code
+			response.RedirectLocation = red.URL
+		else: assert false, 'Unknown response type'
 	
 	public def Run():
 		listener = System.Net.HttpListener()

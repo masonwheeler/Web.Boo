@@ -14,6 +14,9 @@ class ResponseData:
 	[Getter(AsJson)]
 	private _asJson as JToken
 
+	[Getter(AsRedirect)]
+	private _asRedirect as Redirect
+
 	def constructor(value as string):
 		_asString = value
 
@@ -23,6 +26,9 @@ class ResponseData:
 	def constructor(value as JToken):
 		_asJson = value
 
+	def constructor(value as Redirect):
+		_asRedirect = value
+
 	static def op_Implicit(value as string) as ResponseData:
 		return ResponseData(value)
 
@@ -30,4 +36,7 @@ class ResponseData:
 		return ResponseData(value)
 
 	static def op_Implicit(value as JToken) as ResponseData:
+		return ResponseData(value)
+
+	static def op_Implicit(value as Redirect) as ResponseData:
 		return ResponseData(value)
