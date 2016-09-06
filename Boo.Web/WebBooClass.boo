@@ -63,7 +63,7 @@ class WebBooClass:
 		creator as Func[of WebBooTemplate]
 		if _templateDict.TryGetValue(path, creator):
 			var template = creator()
-			return template.Process(_request, _response, self.ParsePostData())
+			return template.Process(_request, _response, _session, self.ParsePostData())
 		else: return null
 
 	protected static def AddTemplateType(cls as Type):
