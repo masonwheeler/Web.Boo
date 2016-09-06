@@ -6,16 +6,22 @@ import System.IO
 import System.Net
 
 internal interface IDispatcher:
-	def Register(paths as (string), loader as Func[of HttpListenerContext, WebBooClass])
+	def Register(paths as (string), loader as Func[of HttpListenerContext, Session, WebBooClass])
 	
-	def Dispatch(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool
+	def Dispatch(paths as (string), context as HttpListenerContext, s as Session, ref result as ResponseData) as bool
 
 class Application:
 	
+	[Property(SessionStore)]
+	private _sessionStore as Store
+
+	[Property(SessionInitializer)]
+	private _sessionInitializer as Action[of Session]
+
 	private class SubpathDispatcher(IDispatcher):
 		private _pathMap = Dictionary[of string, IDispatcher]()
 		
-		def Register(subpaths as (string), loader as Func[of HttpListenerContext, WebBooClass]):
+		def Register(subpaths as (string), loader as Func[of HttpListenerContext, Session, WebBooClass]):
 			if subpaths.Length > 1:
 				dispatcher as IDispatcher
 				unless _pathMap.TryGetValue(subpaths[0], dispatcher):
@@ -25,24 +31,24 @@ class Application:
 			else:
 				_pathMap[subpaths[0]] = RequestDispatcher(loader)
 		
-		def Dispatch(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool:
+		def Dispatch(paths as (string), context as HttpListenerContext, s as Session, ref result as ResponseData) as bool:
 			return false if paths.Length == 0
 			dispatcher as IDispatcher
 			return false unless _pathMap.TryGetValue(paths[0], dispatcher)
-			return dispatcher.Dispatch(paths[1:], context, result)
+			return dispatcher.Dispatch(paths[1:], context, s, result)
 		
 	private class RequestDispatcher(SubpathDispatcher, IDispatcher):
-		_loader as Func[of HttpListenerContext, WebBooClass]
+		_loader as Func[of HttpListenerContext, Session, WebBooClass]
 		
-		def constructor(loader as Func[of HttpListenerContext, WebBooClass]):
+		def constructor(loader as Func[of HttpListenerContext, Session, WebBooClass]):
 			_loader = loader
 		
-		def Dispatch(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool:
+		def Dispatch(paths as (string), context as HttpListenerContext, s as Session, ref result as ResponseData) as bool:
 			var worked = false
 			if paths.Length > 0:
-				worked = super(paths, context, result)
+				worked = super(paths, context, s, result)
 				return true if worked
-			var handler = _loader(context)
+			var handler = _loader(context, s)
 			if context.Request.HttpMethod == 'GET':
 				result = handler._DispatchGet_(string.Join('/', paths))
 				return true
@@ -53,7 +59,7 @@ class Application:
 
 	static _dispatcher = SubpathDispatcher()
 	
-	static def RegisterWebBooClass([Required] path as string, [Required] loader as Func[of HttpListenerContext, WebBooClass]):
+	static def RegisterWebBooClass([Required] path as string, [Required] loader as Func[of HttpListenerContext, Session, WebBooClass]):
 		if path.EndsWith('/'):
 			path = path[:-1]
 		
@@ -83,6 +89,14 @@ class Application:
 			response.RedirectLocation = red.URL
 		else: assert false, 'Unknown response type'
 	
+	private def DispatchData(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool:
+		if _sessionStore is not null:
+			return Session.WithSession(context.Request, context.Response, _sessionStore, _sessionInitializer, result) do (s as Session,
+					ref result as ResponseData) as bool:
+				return _dispatcher.Dispatch(paths, context, s, result)
+		else:
+			return _dispatcher.Dispatch(paths, context, null, result)
+	
 	public def Run():
 		listener = System.Net.HttpListener()
 		for prefix in _prefixes:
@@ -96,7 +110,7 @@ class Application:
 				var url = request.RawUrl.Split(*(char('?'),))[0]
 				var paths = url.Split(*(char('/'),))
 				paths = paths[:-1] if paths[paths.Length - 1] == ''
-				if _dispatcher.Dispatch(paths, context, result):
+				if DispatchData(paths, context, result):
 					if result is not null:
 						HandleResponse(result, context.Response)
 			except as FileNotFoundException:

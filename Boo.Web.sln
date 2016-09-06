@@ -8,6 +8,8 @@ Project("{A33008B1-5DAC-44D5-9060-242E3B6E38F2}") = "HelloWorld", "HelloWorld\He
 EndProject
 Project("{A33008B1-5DAC-44D5-9060-242E3B6E38F2}") = "Templates", "Templates\Templates.booproj", "{2297BB1E-3AFC-4649-90BB-7AD776FBC53F}"
 EndProject
+Project("{A33008B1-5DAC-44D5-9060-242E3B6E38F2}") = "Sessions", "Sessions\Sessions.booproj", "{B3B31BFF-9FDD-4D41-B0B9-D3E1318A6DB9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,5 +28,9 @@ Global
 		{2297BB1E-3AFC-4649-90BB-7AD776FBC53F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2297BB1E-3AFC-4649-90BB-7AD776FBC53F}.Release|Any CPU.Build.0 = Release|Any CPU
 		{2297BB1E-3AFC-4649-90BB-7AD776FBC53F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B3B31BFF-9FDD-4D41-B0B9-D3E1318A6DB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B3B31BFF-9FDD-4D41-B0B9-D3E1318A6DB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B3B31BFF-9FDD-4D41-B0B9-D3E1318A6DB9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B3B31BFF-9FDD-4D41-B0B9-D3E1318A6DB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -4,20 +4,24 @@ import System
 import System.Net
 
 class WebBooClass:
-	
-	protected static final EXE_DIR = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
+
+	public static final EXE_DIR = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
 
 	protected static _templateDict as System.Collections.Generic.Dictionary[of string, Func[of WebBooTemplate]]
-	
+
 	[Getter(Request)]
 	private _request as HttpListenerRequest
-	
+
 	[Getter(Response)]
 	private _response as HttpListenerResponse
-	
-	def constructor(context as System.Net.HttpListenerContext):
+
+	[Getter(SessionData)]
+	private _session as Session
+
+	def constructor(context as System.Net.HttpListenerContext, session as Session):
 		_request = context.Request
 		_response = context.Response
+		_session = session
 	
 	virtual public def Get() as ResponseData:
 		raise System.IO.FileNotFoundException()

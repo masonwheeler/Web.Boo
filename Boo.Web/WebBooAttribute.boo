@@ -65,8 +65,8 @@ private class WebBooTransformer(DepthFirstTransformer):
 		super(node)
 		unless _constructorFound:
 			var ctr = [|
-				public def constructor(context as System.Net.HttpListenerContext):
-					super(context)
+				public def constructor(context as System.Net.HttpListenerContext, session as Session):
+					super(context, session)
 			|]
 			node.Members.Add(ctr)
 		
@@ -81,7 +81,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 		BuildDispatch(node)
 		var init = [|
 			initialization:
-				Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r | return $(ReferenceExpression(node.Name))(r)})
+				Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s)})
 		|]
 		node.GetAncestor[of Module]().Globals.Add(init)
 
@@ -269,4 +269,3 @@ private class WebBooTransformer(DepthFirstTransformer):
 		return if processor is null
 		processor.Body.Statements.Remove(processor.Body.LastStatement)
 		processor.Body.Add([|return SendFile(string.Join('', values))|])
-		
