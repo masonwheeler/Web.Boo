@@ -99,6 +99,8 @@ class Application:
 				if _dispatcher.Dispatch(paths, context, result):
 					if result is not null:
 						HandleResponse(result, context.Response)
+			except as FileNotFoundException:
+				context.Response.StatusCode = 404
 			except:
 				context.Response.StatusCode = 500
 			context.Response.OutputStream.Close()
