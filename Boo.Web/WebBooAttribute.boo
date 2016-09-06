@@ -69,8 +69,6 @@ private class WebBooTransformer(DepthFirstTransformer):
 					super(context)
 			|]
 			node.Members.Add(ctr)
-		unless _mainGetFound:
-			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		
 		if _attr.FileServer.Value:
 			if _attr.TemplateServer is not null:
@@ -78,6 +76,8 @@ private class WebBooTransformer(DepthFirstTransformer):
 			else: SetFileServer(node) 
 		elif _attr.TemplateServer is not null:
 			SetTemplateServer(node)
+		unless _mainGetFound:
+			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		BuildDispatch(node)
 		var init = [|
 			initialization:
@@ -197,6 +197,11 @@ private class WebBooTransformer(DepthFirstTransformer):
 			_attr.Regex = RELiteralExpression('/(.*)/')
 		_getMatches = true
 
+	private static final _fsDefaultGet = [|
+		override def Get() as ResponseData:
+			return SendFile('/index.html')
+	|]
+
 	private def SetFileServer(node as ClassDefinition):
 		if _getMatches:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a FileServer with a Get(string*) method already defined"))
@@ -206,8 +211,11 @@ private class WebBooTransformer(DepthFirstTransformer):
 				return SendFile(string.Join('', values))
 		|]
 		node.Members.Add(fs)
+		unless _mainGetFound:
+			node.Members.Add(_fsDefaultGet.CleanClone())
+			_mainGetFound = true
 		EnsureMatchDispatch()
-	
+
 	private def GetStaticConstructor(node as ClassDefinition) as Constructor:
 		var result = node.Members.OfType[of Constructor]().Where({c | c.IsStatic}).SingleOrDefault()
 		if result is null:
@@ -233,6 +241,11 @@ private class WebBooTransformer(DepthFirstTransformer):
 		|]
 		ctor.Body.Add(init)
 
+	private static final _templateDefaultGet = [|
+		override def Get() as ResponseData:
+			return ProcessTemplate('index')
+	|]
+
 	private def SetTemplateServer(node as ClassDefinition) as Method:
 		if _getMatches:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a TemplateServer with a Get(string*) method already defined"))
@@ -246,6 +259,9 @@ private class WebBooTransformer(DepthFirstTransformer):
 		|]
 		node.Members.Add(result)
 		EnsureMatchDispatch()
+		unless _mainGetFound:
+			node.Members.Add(_templateDefaultGet.CleanClone())
+			_mainGetFound = true
 		return result
 
 	private def SetFileServerWithTemplateServer(node as ClassDefinition):
