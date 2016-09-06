@@ -23,6 +23,9 @@ class WebBooAttribute(AbstractAstAttribute):
 	[Property(FileServer)]
 	private _fileServer = BoolLiteralExpression(false)
 
+	[Property(TemplateServer, not string.IsNullOrWhiteSpace(value.Value))]
+	private _templateServer as StringLiteralExpression
+
 	def constructor(path as StringLiteralExpression):
 		super()
 		_path = path.Value
@@ -69,7 +72,12 @@ private class WebBooTransformer(DepthFirstTransformer):
 		unless _mainGetFound:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		
-		SetFileServer(node) if _attr.FileServer.Value
+		if _attr.FileServer.Value:
+			if _attr.TemplateServer is not null:
+				SetFileServerWithTemplateServer(node)
+			else: SetFileServer(node) 
+		elif _attr.TemplateServer is not null:
+			SetTemplateServer(node)
 		BuildDispatch(node)
 		var init = [|
 			initialization:
@@ -184,6 +192,11 @@ private class WebBooTransformer(DepthFirstTransformer):
 			body.Add([|return Get()|])
 		node.Members.Add(dispatch)
 
+	private def EnsureMatchDispatch():
+		if _attr.Regex is null:
+			_attr.Regex = RELiteralExpression('/(.*)/')
+		_getMatches = true
+
 	private def SetFileServer(node as ClassDefinition):
 		if _getMatches:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a FileServer with a Get(string*) method already defined"))
@@ -193,6 +206,51 @@ private class WebBooTransformer(DepthFirstTransformer):
 				return SendFile(string.Join('', values))
 		|]
 		node.Members.Add(fs)
-		if _attr.Regex is null:
-			_attr.Regex = RELiteralExpression('/(.*)/')
-		_getMatches = true
+		EnsureMatchDispatch()
+	
+	private def GetStaticConstructor(node as ClassDefinition) as Constructor:
+		var result = node.Members.OfType[of Constructor]().Where({c | c.IsStatic}).SingleOrDefault()
+		if result is null:
+			result = Constructor()
+			result.Modifiers |= TypeMemberModifiers.Static
+			node.Members.Add(result)
+		return result
+
+	private def PrepareClassConstructor(node as ClassDefinition):
+		var ctor = GetStaticConstructor(node)
+		var searchPath = System.IO.Path.GetDirectoryName(StripLeadingSlash(_attr.TemplateServer.Value))
+		var filename = System.IO.Path.GetFileName(_attr.TemplateServer.Value)
+		var init = [|
+			var tc = Boo.Lang.Useful.BooTemplate.TemplateCompiler()
+			tc.TemplateBaseClass = WebBooTemplate
+			var folder = System.IO.Path.Combine(EXE_DIR, 'templates', $searchPath)
+			_templateDict = System.Collections.Generic.Dictionary[of string, System.Func[of Boo.Web.WebBooTemplate]]()
+			for template in System.IO.Directory.EnumerateFiles(folder, $filename):
+				var filename = System.IO.Path.GetFileNameWithoutExtension(template)
+				tc.TemplateClassName = filename
+				var cu = tc.CompileFile(template)
+				AddTemplateType(cu.GeneratedAssembly.GetType(filename))
+		|]
+		ctor.Body.Add(init)
+
+	private def SetTemplateServer(node as ClassDefinition) as Method:
+		if _getMatches:
+			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a TemplateServer with a Get(string*) method already defined"))
+			return null
+		PrepareClassConstructor(node)
+		var result = [|
+			override public def Get(values as string*) as ResponseData:
+				var result = ProcessTemplate(string.Join('', values))
+				return result if result is not null
+				raise System.IO.FileNotFoundException()
+		|]
+		node.Members.Add(result)
+		EnsureMatchDispatch()
+		return result
+
+	private def SetFileServerWithTemplateServer(node as ClassDefinition):
+		var processor = SetTemplateServer(node)
+		return if processor is null
+		processor.Body.Statements.Remove(processor.Body.LastStatement)
+		processor.Body.Add([|return SendFile(string.Join('', values))|])
+		

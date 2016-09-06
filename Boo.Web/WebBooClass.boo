@@ -6,6 +6,8 @@ import System.Net
 class WebBooClass:
 	
 	protected static final EXE_DIR = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
+
+	protected static _templateDict as System.Collections.Generic.Dictionary[of string, Func[of WebBooTemplate]]
 	
 	[Getter(Request)]
 	private _request as HttpListenerRequest
@@ -52,3 +54,14 @@ class WebBooClass:
 		//no support for multipart yet
 		//parser is available at HttpUtils.HttpMultipartParser, but implementing it will
 		//take a bit of work
+
+	protected def ProcessTemplate(path as string) as ResponseData:
+		creator as Func[of WebBooTemplate]
+		if _templateDict.TryGetValue(path, creator):
+			var template = creator()
+			return template.Process(_request, _response, self.ParsePostData())
+		else: return null
+
+	protected static def AddTemplateType(cls as Type):
+		assert cls.BaseType == WebBooTemplate
+		_templateDict.Add(cls.Name, {return Activator.CreateInstance(cls) cast WebBooTemplate})
