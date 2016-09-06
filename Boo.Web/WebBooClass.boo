@@ -10,8 +10,12 @@ class WebBooClass:
 	[Getter(Request)]
 	private _request as HttpListenerRequest
 	
-	def constructor(context as System.Net.HttpListenerRequest):
-		_request = context
+	[Getter(Response)]
+	private _response as HttpListenerResponse
+	
+	def constructor(context as System.Net.HttpListenerContext):
+		_request = context.Request
+		_response = context.Response
 	
 	virtual public def Get() as ResponseData:
 		raise System.IO.FileNotFoundException()

@@ -6,16 +6,16 @@ import System.IO
 import System.Net
 
 internal interface IDispatcher:
-	def Register(paths as (string), loader as Func[of HttpListenerRequest, WebBooClass])
+	def Register(paths as (string), loader as Func[of HttpListenerContext, WebBooClass])
 	
-	def Dispatch(paths as (string), request as HttpListenerRequest, ref result as ResponseData) as bool
+	def Dispatch(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool
 
 class Application:
 	
 	private class SubpathDispatcher(IDispatcher):
 		private _pathMap = Dictionary[of string, IDispatcher]()
 		
-		def Register(subpaths as (string), loader as Func[of HttpListenerRequest, WebBooClass]):
+		def Register(subpaths as (string), loader as Func[of HttpListenerContext, WebBooClass]):
 			if subpaths.Length > 1:
 				dispatcher as IDispatcher
 				unless _pathMap.TryGetValue(subpaths[0], dispatcher):
@@ -25,35 +25,35 @@ class Application:
 			else:
 				_pathMap[subpaths[0]] = RequestDispatcher(loader)
 		
-		def Dispatch(paths as (string), request as HttpListenerRequest, ref result as ResponseData) as bool:
+		def Dispatch(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool:
 			return false if paths.Length == 0
 			dispatcher as IDispatcher
 			return false unless _pathMap.TryGetValue(paths[0], dispatcher)
-			return dispatcher.Dispatch(paths[1:], request, result)
+			return dispatcher.Dispatch(paths[1:], context, result)
 		
 	private class RequestDispatcher(SubpathDispatcher, IDispatcher):
-		_loader as Func[of HttpListenerRequest, WebBooClass]
+		_loader as Func[of HttpListenerContext, WebBooClass]
 		
-		def constructor(loader as Func[of HttpListenerRequest, WebBooClass]):
+		def constructor(loader as Func[of HttpListenerContext, WebBooClass]):
 			_loader = loader
 		
-		def Dispatch(paths as (string), request as HttpListenerRequest, ref result as ResponseData) as bool:
+		def Dispatch(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool:
 			var worked = false
 			if paths.Length > 0:
-				worked = super(paths, request, result)
+				worked = super(paths, context, result)
 				return true if worked
-			var handler = _loader(request)
-			if request.HttpMethod == 'GET':
+			var handler = _loader(context)
+			if context.Request.HttpMethod == 'GET':
 				result = handler._DispatchGet_(string.Join('/', paths))
 				return true
-			elif request.HttpMethod == 'POST':
+			elif context.Request.HttpMethod == 'POST':
 				result = handler._DispatchPost_(string.Join('/', paths))
 				return true
 			return false
 
 	static _dispatcher = SubpathDispatcher()
 	
-	static def RegisterWebBooClass([Required] path as string, [Required] loader as Func[of HttpListenerRequest, WebBooClass]):
+	static def RegisterWebBooClass([Required] path as string, [Required] loader as Func[of HttpListenerContext, WebBooClass]):
 		if path.EndsWith('/'):
 			path = path[:-1]
 		
@@ -96,7 +96,7 @@ class Application:
 				var url = request.RawUrl.Split(*(char('?'),))[0]
 				var paths = url.Split(*(char('/'),))
 				paths = paths[:-1] if paths[paths.Length - 1] == ''
-				if _dispatcher.Dispatch(paths, request, result):
+				if _dispatcher.Dispatch(paths, context, result):
 					if result is not null:
 						HandleResponse(result, context.Response)
 			except:

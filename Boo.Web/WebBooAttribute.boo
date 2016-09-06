@@ -62,7 +62,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 		super(node)
 		unless _constructorFound:
 			var ctr = [|
-				public def constructor(context as System.Net.HttpListenerRequest):
+				public def constructor(context as System.Net.HttpListenerContext):
 					super(context)
 			|]
 			node.Members.Add(ctr)
