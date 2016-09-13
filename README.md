@@ -64,4 +64,6 @@ If the `SessionStore` property is set, it's also possible to assign an `Action[o
 Boo.Web requires an up-to-date Boo compiler to build, as it uses the new `initialization` macro under the hood.  Feel free to try it out, and to share any issues or potential improvements you come up with!
 
 ### TODO:
+HTTPS support.
 Web socket support. (Requires async/await support in the compiler.)
+Special templates for custom error pages.
