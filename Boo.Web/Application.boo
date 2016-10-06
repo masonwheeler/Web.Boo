@@ -3,6 +3,7 @@
 import System
 import System.Collections.Generic
 import System.IO
+import System.Linq.Enumerable
 import System.Net
 
 internal interface IDispatcher:
@@ -29,6 +30,7 @@ class Application:
 					_pathMap[subpaths[0]] = dispatcher
 				dispatcher.Register(subpaths[1:], loader)
 			else:
+				assert not _pathMap.ContainsKey(subpaths[0])
 				_pathMap[subpaths[0]] = RequestDispatcher(loader)
 		
 		def Dispatch(paths as (string), context as HttpListenerContext, s as Session, ref result as ResponseData) as bool:
@@ -59,12 +61,18 @@ class Application:
 
 	static _dispatcher = SubpathDispatcher()
 	
+	static _paths = Dictionary[of string, Func[of HttpListenerContext, Session, WebBooClass]]()
+	
 	static def RegisterWebBooClass([Required] path as string, [Required] loader as Func[of HttpListenerContext, Session, WebBooClass]):
 		if path.EndsWith('/'):
 			path = path[:-1]
 		
-		var subpaths = ( ('',) if path == '' else path.Split(*(char('/'),)) )
-		_dispatcher.Register(subpaths, loader)
+		_paths.Add(path, loader)
+	
+	static def LoadPaths():
+		for pair in _paths.OrderBy({kv | kv.Key.Length}):
+			var subpaths = ( ('',) if pair.Key == '' else pair.Key.Split(*(char('/'),)) )
+			_dispatcher.Register(subpaths, pair.Value)
 	
 	_prefixes as (string)
 	
@@ -102,6 +110,7 @@ class Application:
 		for prefix in _prefixes:
 			listener.Prefixes.Add(prefix)
 		listener.Start()
+		LoadPaths()
 		while true:
 			var context = listener.GetContext()
 			try:
