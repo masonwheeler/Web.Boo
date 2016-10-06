@@ -69,3 +69,18 @@ class WebBooClass:
 	protected static def AddTemplateType(cls as Type):
 		assert cls.BaseType == WebBooTemplate
 		_templateDict.Add(cls.Name, {return Activator.CreateInstance(cls) cast WebBooTemplate})
+
+	protected static def LoadTemplates(searchPath as string, mask as string, *imports as (string)):
+		var tc = Boo.Lang.Useful.BooTemplate.TemplateCompiler()
+		tc.TemplateBaseClass = WebBooTemplate
+		tc.DefaultImports.AddRange(imports)
+		tc.DefaultImports.Add('Boo.Web')
+		var folder = System.IO.Path.Combine(EXE_DIR, 'templates', searchPath)
+		_templateDict = System.Collections.Generic.Dictionary[of string, System.Func[of Boo.Web.WebBooTemplate]]()
+		for template in System.IO.Directory.EnumerateFiles(folder, mask):
+			var filename = System.IO.Path.GetFileNameWithoutExtension(template)
+			tc.TemplateClassName = filename
+			var cu = tc.CompileFile(template)
+			if cu.Errors.Count > 0:
+				raise cu.Errors.ToString()
+			AddTemplateType(cu.GeneratedAssembly.GetType(filename))

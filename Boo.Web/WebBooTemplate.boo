@@ -31,5 +31,8 @@ class WebBooTemplate(Boo.Lang.Useful.BooTemplate.ITemplate):
 		Execute()
 		return (_result if _result is not null else Output.ToString())
 
+	protected def Print(value as string):
+		Output.Write(value)
+
 	abstract def Execute():
 		pass

@@ -26,6 +26,9 @@ class WebBooAttribute(AbstractAstAttribute):
 	[Property(TemplateServer, not string.IsNullOrWhiteSpace(value.Value))]
 	private _templateServer as StringLiteralExpression
 
+	[Property(TemplateImports, value.Items.All({e | e.NodeType == NodeType.StringLiteralExpression}))]
+	private _templateImports = ArrayLiteralExpression()
+
 	def constructor(path as StringLiteralExpression):
 		super()
 		_path = path.Value
@@ -231,17 +234,8 @@ private class WebBooTransformer(DepthFirstTransformer):
 		var ctor = GetStaticConstructor(node)
 		var searchPath = System.IO.Path.GetDirectoryName(StripLeadingSlash(_attr.TemplateServer.Value))
 		var filename = System.IO.Path.GetFileName(_attr.TemplateServer.Value)
-		var init = [|
-			var tc = Boo.Lang.Useful.BooTemplate.TemplateCompiler()
-			tc.TemplateBaseClass = WebBooTemplate
-			var folder = System.IO.Path.Combine(EXE_DIR, 'templates', $searchPath)
-			_templateDict = System.Collections.Generic.Dictionary[of string, System.Func[of Boo.Web.WebBooTemplate]]()
-			for template in System.IO.Directory.EnumerateFiles(folder, $filename):
-				var filename = System.IO.Path.GetFileNameWithoutExtension(template)
-				tc.TemplateClassName = filename
-				var cu = tc.CompileFile(template)
-				AddTemplateType(cu.GeneratedAssembly.GetType(filename))
-		|]
+		var init = [|LoadTemplates($searchPath, $filename)|]
+		init.Arguments.AddRange(_attr.TemplateImports.Items)
 		ctor.Body.Add(init)
 
 	private static final _templateDefaultGet = [|
