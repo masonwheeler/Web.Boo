@@ -86,12 +86,15 @@ private class WebBooTransformer(DepthFirstTransformer):
 		node.GetAncestor[of Module]().Globals.Add(init)
 
 	override def OnConstructor(node as Constructor):
-		raise "WebBoo class's constructor must take 0 parameters" if node.Parameters.Count > 0
-		super(node)
-		unless _superFound:
-			node.Body.Insert(0, ExpressionStatement([|super(context)|]))
-		node.Parameters.Add(ParameterDeclaration('context', TypeReference.Lift(System.Net.HttpListenerRequest)))
-		_constructorFound = true
+		if node.IsStatic:
+			super(node)
+		else:
+			raise "WebBoo class's constructor must take 0 parameters" if node.Parameters.Count > 0
+			super(node)
+			unless _superFound:
+				node.Body.Insert(0, ExpressionStatement([|super(context)|]))
+			node.Parameters.Add(ParameterDeclaration('context', TypeReference.Lift(System.Net.HttpListenerRequest)))
+			_constructorFound = true
 
 	override def OnMethodInvocationExpression(node as MethodInvocationExpression):
 		if node.Target.NodeType == NodeType.SuperLiteralExpression:
