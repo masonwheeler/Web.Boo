@@ -176,6 +176,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 				pass
 		|]
 		var body = dispatch.Body
+		EnsureMatchDispatch() if _singleGetMatch or _getMatches
 		if _attr.Regex is not null:
 			EnsureLinq(node)
 			body.Add([|var matches = $(_attr.Regex).Matches(path).Cast[of System.Text.RegularExpressions.Match]()\

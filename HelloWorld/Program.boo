@@ -2,7 +2,7 @@
 
 import Boo.Web
 
-[WebBoo('/', Regex: /(.*)/)]
+[WebBoo('/')]
 class Hello:
 	def Get():
 		return Get('World')
