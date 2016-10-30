@@ -182,7 +182,7 @@ class Store:
 	static def op_NotMember(lhs as string, rhs as Store) as bool:
 		return not rhs.Contains(lhs)
 
-	virtual abstract protected internal def Contains(key as string) as bool:
+	abstract protected internal def Contains(key as string) as bool:
 		pass
 
 	self[key as string] as Dictionary[of string, string]):
