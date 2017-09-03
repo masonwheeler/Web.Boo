@@ -30,6 +30,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Boo.Lang.Useful" />
+    <Reference Include="MimeTypeMap">
+      <HintPath>..\packages\MediaTypeMap.2.1.0.0\lib\net40\MimeTypeMap.dll</HintPath>
+    </Reference>
     <Reference Include="System.Core">
       <RequiredTargetFramework>3.5</RequiredTargetFramework>
     </Reference>
@@ -46,6 +49,7 @@
   <ItemGroup>
     <Compile Include="Application.boo" />
     <Compile Include="AssemblyInfo.boo" />
+    <Compile Include="ExecuteProvidedAttribute.boo" />
     <Compile Include="HTTPError.boo" />
     <Compile Include="HttpUtils\HttpContentParser.boo" />
     <Compile Include="HttpUtils\HttpMultipartParser.boo" />
@@ -60,6 +64,9 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="HttpUtils" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(BooBinPath)\Boo.Microsoft.Build.targets" />
 </Project>

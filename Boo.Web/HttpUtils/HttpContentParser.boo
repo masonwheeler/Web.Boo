@@ -25,9 +25,10 @@
 
 namespace HttpUtils
 
-import System.IO
-import System.Text
 import System.Collections.Generic
+import System.IO
+import System.Net.WebUtility
+import System.Text
 
 public class HttpContentParser:
 """
@@ -77,7 +78,7 @@ Reads an http data stream and returns the form parameters.
 
 	private def AddParameter(name as string, value as string):
 		if (not string.IsNullOrWhiteSpace(name)) and (not string.IsNullOrWhiteSpace(value)):
-			Parameters.Add(name.Trim(), value.Trim())
+			Parameters.Add(UrlDecode(name.Trim()), UrlDecode(value.Trim()))
 
 	public Parameters as IDictionary[of string, string] = Dictionary[of string, string]()
 

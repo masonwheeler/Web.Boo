@@ -3,6 +3,7 @@
 import System.Linq.Enumerable
 import Boo.Lang.Compiler
 import Boo.Lang.Compiler.Ast
+import Boo.Lang.Compiler.TypeSystem
 import Boo.Lang.Compiler.TypeSystem.Internal
 import Boo.Lang.Environments
 import Boo.Lang.Compiler.TypeSystem.Services
@@ -28,6 +29,12 @@ class WebBooAttribute(AbstractAstAttribute):
 
 	[Property(TemplateImports, value.Items.All({e | e.NodeType == NodeType.StringLiteralExpression}))]
 	private _templateImports = ArrayLiteralExpression()
+
+	[Property(TemplateBaseClass, not string.IsNullOrWhiteSpace(value.Name))]
+	private _templateBaseClass as ReferenceExpression
+
+	def constructor():
+		super()
 
 	def constructor(path as StringLiteralExpression):
 		super()
@@ -63,8 +70,9 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	override def OnClassDefinition(node as ClassDefinition):
 		node.BaseTypes.Reject({tr | tr.ToString() == 'object'})
-		assert node.BaseTypes.Count == 0, "WebBoo attribute can't be applied to classes with a base type"
-		node.BaseTypes.Add(TypeReference.Lift(Boo.Web.WebBooClass))
+		if node.BaseTypes.Count > 0:
+			ProcessBaseTypes(node.BaseTypes)
+		else: node.BaseTypes.Add(TypeReference.Lift(Boo.Web.WebBooClass))
 		super(node)
 		unless _constructorFound:
 			var ctr = [|
@@ -82,11 +90,26 @@ private class WebBooTransformer(DepthFirstTransformer):
 		unless _mainGetFound:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
 		BuildDispatch(node)
-		var init = [|
-			initialization:
-				Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s)})
-		|]
-		node.GetAncestor[of Module]().Globals.Add(init)
+		if _attr.Path is not null:
+			var init = [|
+				initialization:
+					Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s)})
+			|]
+			node.GetAncestor[of Module]().Globals.Add(init)
+
+	private def ProcessBaseTypes(baseTypes as TypeReferenceCollection):
+		var nrs = My[of NameResolutionService].Instance
+		def isInterface(t as IType):
+			return (nrs.Resolve(t.ToString(), EntityType.Type) cast IType)?.IsInterface
+		
+		if baseTypes.All(isInterface):
+			baseTypes.Insert(0, TypeReference.Lift(Boo.Web.WebBooClass))
+			return
+		
+		var baseType = baseTypes[0]
+		typeRef as IType = nrs.Resolve(baseType.ToString(), EntityType.Type)
+		if typeRef is null or not typeRef.IsAssignableFrom(My[of TypeSystemServices].Instance.Map(Boo.Web.WebBooClass)):
+			raise "$(baseType.ToString()) is not a valid WebBoo base class"
 
 	override def OnConstructor(node as Constructor):
 		if node.IsStatic:
@@ -95,8 +118,9 @@ private class WebBooTransformer(DepthFirstTransformer):
 			raise "WebBoo class's constructor must take 0 parameters" if node.Parameters.Count > 0
 			super(node)
 			unless _superFound:
-				node.Body.Insert(0, ExpressionStatement([|super(context)|]))
-			node.Parameters.Add(ParameterDeclaration('context', TypeReference.Lift(System.Net.HttpListenerRequest)))
+				node.Body.Insert(0, ExpressionStatement([|super(context, session)|]))
+			node.Parameters.Add(ParameterDeclaration('context', TypeReference.Lift(System.Net.HttpListenerContext)))
+			node.Parameters.Add(ParameterDeclaration('session', TypeReference.Lift(Boo.Web.Session)))
 			_constructorFound = true
 
 	override def OnMethodInvocationExpression(node as MethodInvocationExpression):
@@ -236,6 +260,8 @@ private class WebBooTransformer(DepthFirstTransformer):
 		var searchPath = System.IO.Path.GetDirectoryName(StripLeadingSlash(_attr.TemplateServer.Value))
 		var filename = System.IO.Path.GetFileName(_attr.TemplateServer.Value)
 		var init = [|LoadTemplates($searchPath, $filename)|]
+		if _attr.TemplateBaseClass is not null:
+			init.Arguments.Add(_attr.TemplateBaseClass.CleanClone())
 		init.Arguments.AddRange(_attr.TemplateImports.Items)
 		ctor.Body.Add(init)
 
@@ -256,6 +282,13 @@ private class WebBooTransformer(DepthFirstTransformer):
 				raise System.IO.FileNotFoundException()
 		|]
 		node.Members.Add(result)
+		var post = [|
+			override protected internal def _DispatchPost_(path as string) as ResponseData:
+				var result = ProcessTemplate(path)
+				return result if result is not null
+				return super._DispatchPost_(path)
+		|]
+		node.Members.Add(post)
 		EnsureMatchDispatch()
 		unless _mainGetFound:
 			node.Members.Add(_templateDefaultGet.CleanClone())

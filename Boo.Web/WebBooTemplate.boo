@@ -5,7 +5,7 @@ import System.Net
 
 class WebBooTemplate(Boo.Lang.Useful.BooTemplate.ITemplate):
 	[Property(Output)]
-	_output as System.IO.TextWriter = System.IO.StringWriter()
+	_output = System.IO.StringWriter()
 
 	[Getter(Request)]
 	private _request as HttpListenerRequest
@@ -32,6 +32,9 @@ class WebBooTemplate(Boo.Lang.Useful.BooTemplate.ITemplate):
 		return (_result if _result is not null else Output.ToString())
 
 	protected def Print(value as string):
+		Output.Write(value)
+
+	protected def print(value as string):
 		Output.Write(value)
 
 	abstract def Execute():

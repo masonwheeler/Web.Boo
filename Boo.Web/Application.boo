@@ -85,6 +85,9 @@ class Application:
 			using writer = System.IO.StreamWriter(response.OutputStream):
 				writer.Write(result.AsString)
 		elif result.AsStream is not null:
+			var fStream = result.AsStream as FileStream
+			if fStream is not null:
+				response.ContentType = MimeTypes.MimeTypeMap.GetMimeType(Path.GetExtension(fStream.Name))
 			result.AsStream.CopyTo(response.OutputStream)
 			result.AsStream.Close()
 		elif result.AsJson is not null:
@@ -104,7 +107,18 @@ class Application:
 				return _dispatcher.Dispatch(paths, context, s, result)
 		else:
 			return _dispatcher.Dispatch(paths, context, null, result)
-	
+
+	private def SendError(response as HttpListenerResponse, code as int):
+		message as string
+		if code == 404:
+			message = 'Not found'
+		elif code == 500:
+			message = 'Internal Server Error'
+		message = "$code $message"
+		response.StatusCode = code
+		using writer = System.IO.StreamWriter(response.OutputStream):
+				writer.Write(message)
+
 	public def Run():
 		listener = System.Net.HttpListener()
 		for prefix in _prefixes:
@@ -123,7 +137,9 @@ class Application:
 					if result is not null:
 						HandleResponse(result, context.Response)
 			except as FileNotFoundException:
-				context.Response.StatusCode = 404
-			except:
-				context.Response.StatusCode = 500
+				SendError(context.Response, 404)
+			except as DirectoryNotFoundException:
+				SendError(context.Response, 404)
+			except x as Exception:
+				SendError(context.Response, 500)
 			context.Response.OutputStream.Close()

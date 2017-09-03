@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>MediaTypeMap</id>
+    <version>2.1.0.0</version>
+    <title>Media Type Map</title>
+    <authors>Samuel Neff</authors>
+    <owners>Samuel Neff</owners>
+    <licenseUrl>https://github.com/samuelneff/MimeTypeMap/blob/master/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/samuelneff/MimeTypeMap</projectUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Huge dictionary of file extensions to mime types</description>
+    <tags>C# ASP.NET</tags>
+  </metadata>
+</package>
