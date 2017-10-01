@@ -68,7 +68,14 @@ class Application:
 			path = path[:-1]
 		
 		_paths.Add(path, loader)
-	
+
+	static _errorHandlers = Dictionary[of int, Func[of int, HttpListenerRequest, ResponseData]]()
+
+	static def RegisterErrorHandler(code as int, [Required] handler as Func[of int, HttpListenerRequest, ResponseData]):
+		if _errorHandlers.ContainsKey(code):
+			raise ArgumentException("Attempted to register error handler code $code multiple times")
+		_errorHandlers.Add(code, handler)
+
 	static def LoadPaths():
 		for pair in _paths.OrderBy({kv | kv.Key.Length}):
 			var subpaths = ( ('',) if pair.Key == '' else pair.Key.Split(*(char('/'),)) )
@@ -107,15 +114,23 @@ class Application:
 		else:
 			return _dispatcher.Dispatch(paths, context, null, result)
 
-	private def SendError(response as HttpListenerResponse, code as int):
+	private def RunErrorHandler(context as HttpListenerContext, code as int):
+		var result = _errorHandlers[code](code, context.Request)
+		HandleResponse(result, context.Response)
+
+	private def SendError(context as HttpListenerContext, code as int):
+		if _errorHandlers.ContainsKey(code):
+			RunErrorHandler(context, code)
+			return
+		
 		message as string
 		if code == 404:
 			message = 'Not found'
 		elif code == 500:
 			message = 'Internal Server Error'
 		message = "$code $message"
-		response.StatusCode = code
-		using writer = System.IO.StreamWriter(response.OutputStream):
+		context.Response.StatusCode = code
+		using writer = System.IO.StreamWriter(context.Response.OutputStream):
 				writer.Write(message)
 
 	public def Run():
@@ -136,9 +151,12 @@ class Application:
 					if result is not null:
 						HandleResponse(result, context.Response)
 			except as FileNotFoundException:
-				SendError(context.Response, 404)
+				SendError(context, 404)
 			except as DirectoryNotFoundException:
-				SendError(context.Response, 404)
+				SendError(context, 404)
+			except a as AbortException:
+				SendError(context, a.Code)
 			except x as Exception:
-				SendError(context.Response, 500)
+				SendError(context, 500)
+				print x
 			context.Response.OutputStream.Close()

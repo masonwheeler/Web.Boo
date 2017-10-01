@@ -47,8 +47,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AbortException.boo" />
     <Compile Include="Application.boo" />
     <Compile Include="AssemblyInfo.boo" />
+    <Compile Include="ErrorHandlerAttribute.boo" />
     <Compile Include="ExecuteProvidedAttribute.boo" />
     <Compile Include="HTTPError.boo" />
     <Compile Include="HttpUtils\HttpContentParser.boo" />
