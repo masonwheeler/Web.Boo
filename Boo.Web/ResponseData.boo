@@ -17,6 +17,9 @@ class ResponseData:
 	[Getter(AsRedirect)]
 	private _asRedirect as Redirect
 
+	[GetterAttribute(IsDone)]
+	private _isDone as bool
+
 	def constructor(value as string):
 		_asString = value
 
@@ -29,6 +32,9 @@ class ResponseData:
 	def constructor(value as Redirect):
 		_asRedirect = value
 
+	private def constructor():
+		_isDone = true
+
 	static def op_Implicit(value as string) as ResponseData:
 		return ResponseData(value)
 
@@ -40,3 +46,5 @@ class ResponseData:
 
 	static def op_Implicit(value as Redirect) as ResponseData:
 		return ResponseData(value)
+
+	public static final Done = ResponseData()

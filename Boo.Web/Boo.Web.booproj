@@ -56,7 +56,6 @@
     <Compile Include="HttpUtils\Misc.boo" />
     <Compile Include="Redirect.boo" />
     <Compile Include="ResponseData.boo" />
-    <Compile Include="SendFile.boo" />
     <Compile Include="Session.boo" />
     <Compile Include="WebBooAttribute.boo" />
     <Compile Include="WebBooClass.boo" />

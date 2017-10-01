@@ -85,9 +85,6 @@ class Application:
 			using writer = System.IO.StreamWriter(response.OutputStream):
 				writer.Write(result.AsString)
 		elif result.AsStream is not null:
-			var fStream = result.AsStream as FileStream
-			if fStream is not null:
-				response.ContentType = MimeTypes.MimeTypeMap.GetMimeType(Path.GetExtension(fStream.Name))
 			result.AsStream.CopyTo(response.OutputStream)
 			result.AsStream.Close()
 		elif result.AsJson is not null:
@@ -98,6 +95,8 @@ class Application:
 			var red = result.AsRedirect
 			response.StatusCode = red.Code
 			response.RedirectLocation = red.URL
+		elif result.IsDone:
+			pass
 		else: assert false, 'Unknown response type'
 	
 	private def DispatchData(paths as (string), context as HttpListenerContext, ref result as ResponseData) as bool:

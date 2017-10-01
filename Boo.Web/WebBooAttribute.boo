@@ -46,7 +46,7 @@ class WebBooAttribute(AbstractAstAttribute):
 		webBooNode.Accept(WebBooTransformer(self))
 
 private class WebBooTransformer(DepthFirstTransformer):
-	private static final METHODS = System.Collections.Generic.List[of string](('Get', 'Post', 'Head'))
+	private static final METHODS = System.Collections.Generic.List[of string](('Get', 'Post', 'Head', 'Put', 'Delete'))
 	private static final STRING_TYPE = SimpleTypeReference('string')
 	private static final MATCHES_TYPE = GenericTypeReference('System.Collections.Generic.IEnumerable', STRING_TYPE.CleanClone())
 	private static final STREAM_RETURN_TYPE = TypeReference.Lift(System.IO.Stream)
@@ -257,7 +257,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	private def PrepareClassConstructor(node as ClassDefinition):
 		var ctor = GetStaticConstructor(node)
-		var searchPath = System.IO.Path.GetDirectoryName(StripLeadingSlash(_attr.TemplateServer.Value))
+		var searchPath = System.IO.Path.GetDirectoryName(WebBooClass.StripLeadingSlash(_attr.TemplateServer.Value))
 		var filename = System.IO.Path.GetFileName(_attr.TemplateServer.Value)
 		var init = [|LoadTemplates($searchPath, $filename)|]
 		if _attr.TemplateBaseClass is not null:

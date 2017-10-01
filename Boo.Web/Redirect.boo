@@ -17,6 +17,11 @@ class Redirect:
 
 	public def constructor(url as string, code as int):
 		assert not string.IsNullOrWhiteSpace(url)
-		assert code in (300, 301, 302, 303, 304, 305, 306, 307, 308)
+		assert code in (300, 301, 302, 303, 305, 306, 307, 308)
 		_url = url
 		_code = code
+
+	public def constructor(code as int):
+		assert code == 304
+		_code = code
+		_url = ''
