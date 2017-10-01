@@ -130,7 +130,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 			_superFound = true
 
 	override def OnMethod(node as Method):
-		__switch__(METHODS.IndexOf(node.Name), gett, post, head)
+		__switch__(METHODS.IndexOf(node.Name), gett, post, head, put, delete)
 		return
 		:gett
 		OnGetMethod(node); return
@@ -138,6 +138,10 @@ private class WebBooTransformer(DepthFirstTransformer):
 		OnPostMethod(node); return
 		:head
 		OnHeadMethod(node); return
+		:put
+		OnPutMethod(node); return
+		:delete
+		OnDeleteMethod(node); return
 
 	private def SetFlags(node as Method):
 		if node.IsPrivate or node.IsProtected or node.IsInternal:
@@ -167,7 +171,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 				return true
 		return false
 
-	private def IsPostMethod(node as Method) as bool:
+	private def IsPostOrPutMethod(node as Method) as bool:
 		var args = node.Parameters
 		if args.Count == 1:
 			var arg1 = args[0]
@@ -179,13 +183,21 @@ private class WebBooTransformer(DepthFirstTransformer):
 	private def OnGetMethod(node as Method):
 		return unless IsGetMethod(node)
 		SetFlags(node)
-	
+
 	private def OnPostMethod(node as Method):
-		return unless IsPostMethod(node)
+		return unless IsPostOrPutMethod(node)
 		SetFlags(node)
-		
+
 	private def OnHeadMethod(node as Method):
 		pass
+
+	private def OnPutMethod(node as Method):
+		return unless IsPostOrPutMethod(node)
+		SetFlags(node)
+
+	private def OnDeleteMethod(node as Method):
+		if node.Parameters.Count == 0:
+			SetFlags(node)
 
 	private def EnsureLinq(node as ClassDefinition):
 		var module = node.GetAncestor[of Module]()

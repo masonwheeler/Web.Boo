@@ -41,11 +41,23 @@ class WebBooClass:
 	virtual public def Post(values as System.Collections.Generic.IDictionary[of string, string]) as ResponseData:
 		return Get()
 
+	virtual public def Put(values as System.Collections.Generic.IDictionary[of string, string]) as ResponseData:
+		return Get()
+
+	virtual public def Delete() as ResponseData:
+		return Get()
+
 	abstract protected internal def _DispatchGet_(path as string) as ResponseData:
 		pass
 
 	virtual protected internal def _DispatchPost_(path as string) as ResponseData:
 		return Post(ParsePostData())
+
+	virtual protected internal def _DispatchPut_(path as string) as ResponseData:
+		return Put(ParsePostData())
+
+	virtual protected internal def _DispatchDelete_(path as string) as ResponseData:
+		return Delete()
 
 	protected def ParseQueryString() as System.Collections.Generic.IDictionary[of string, string]:
 		var result = System.Collections.Generic.Dictionary[of string, string]()

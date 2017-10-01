@@ -57,6 +57,12 @@ class Application:
 			elif context.Request.HttpMethod == 'POST':
 				result = handler._DispatchPost_(string.Join('/', paths))
 				return true
+			elif context.Request.HttpMethod == 'PUT':
+				result = handler._DispatchPut_(string.Join('/', paths))
+				return true
+			elif context.Request.HttpMethod == 'DELETE':
+				result = handler._DispatchDelete_(string.Join('/', paths))
+				return true
 			return false
 
 	static _dispatcher = SubpathDispatcher()

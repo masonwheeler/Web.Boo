@@ -14,6 +14,6 @@ class AbortException(Exception):
 
 [Meta]
 def Abort(code as int) as Statement:
-	unless a >= 400 and a < 600:
+	unless code >= 400 and code < 600:
 		raise "Abort value must be a valid 4xx or 5xx error code"
 	return [|raise AbortException($code)|]
