@@ -13,7 +13,10 @@ class AbortException(Exception):
 		_code = code
 
 [Meta]
-def Abort(code as int) as Statement:
-	unless code >= 400 and code < 600:
+def Abort(code as IntegerLiteralExpression) as Statement:
+	var cv = code.Value
+	unless cv >= 400 and cv < 600:
 		raise "Abort value must be a valid 4xx or 5xx error code"
-	return [|raise AbortException($code)|]
+	var result = [|raise AbortException($cv)|]
+	result.LexicalInfo = code.ParentNode.LexicalInfo
+	return result

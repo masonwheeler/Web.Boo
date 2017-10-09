@@ -4,7 +4,6 @@ import System.Linq.Enumerable
 import Boo.Lang.Compiler
 import Boo.Lang.Compiler.Ast
 import Boo.Lang.Compiler.TypeSystem
-import Boo.Lang.Compiler.TypeSystem.Internal
 import Boo.Lang.Environments
 import Boo.Lang.Compiler.TypeSystem.Services
 
@@ -15,8 +14,10 @@ class WebBooAttribute(AbstractAstAttribute):
 	[Getter(Path)]
 	private _path as string
 
-	[Property(Regex)]
-	private _regex as RELiteralExpression
+	private _interpPath as ExpressionInterpolationExpression
+
+	[Getter(Interpolations)]
+	private _interpolations as ExpressionCollection
 
 	[Property(HasQueryString)]
 	private _hasQueryString = BoolLiteralExpression(false)
@@ -40,6 +41,37 @@ class WebBooAttribute(AbstractAstAttribute):
 		super()
 		_path = path.Value
 
+	def constructor(path as ExpressionInterpolationExpression):
+		super()
+		ValidateInterpolatedPath(path)
+		_interpPath = path
+
+	private def ValidateInterpolatedPath(path as ExpressionInterpolationExpression):
+		_interpolations = ExpressionCollection()
+		unless path.Expressions.All({e | e.NodeType in (NodeType.StringLiteralExpression, NodeType.ReferenceExpression, NodeType.TryCastExpression)}):
+			raise "All interpolations must be of the form '\$name' or '\$(name as type)'"
+		for exprType in path.Expressions.OfType[of TryCastExpression]().Select({tce | string.Intern(tce.Type.ToString())}):
+			if exprType not in ('int', 'long', 'float', 'single', 'double', 'string'):
+				raise "All interpolations must be a string or a simple numeric type"
+		if path.Expressions[0].NodeType != NodeType.StringLiteralExpression:
+			raise "An interpolated path must not begin with an interpolation expression"
+		var sb = System.Text.StringBuilder()
+		for i in range(path.Expressions.Count):
+			var expr = path.Expressions[i]
+			if expr.NodeType == NodeType.StringLiteralExpression:
+				sb.Append((expr cast StringLiteralExpression).Value)
+			else:
+				var last = path.Expressions[i - 1]
+				if last.NodeType != NodeType.StringLiteralExpression or not ((last cast StringLiteralExpression).Value.EndsWith('/')):
+					raise "Only one interpolated expression is allowed per path segment"
+				if i + 1 < path.Expressions.Count:
+					var next = path.Expressions[i + 1]
+					if next.NodeType != NodeType.StringLiteralExpression or not ((last cast StringLiteralExpression).Value.StartsWith('/')):
+						raise "Only one interpolated expression is allowed per path segment"
+				sb.Append('?')
+				_interpolations.Add(expr)
+		_path = sb.ToString()
+
 	override def Apply(node as Node):
 		assert node isa ClassDefinition
 		var webBooNode = node as ClassDefinition
@@ -48,7 +80,6 @@ class WebBooAttribute(AbstractAstAttribute):
 private class WebBooTransformer(DepthFirstTransformer):
 	private static final METHODS = System.Collections.Generic.List[of string](('Get', 'Post', 'Head', 'Put', 'Delete'))
 	private static final STRING_TYPE = SimpleTypeReference('string')
-	private static final MATCHES_TYPE = GenericTypeReference('System.Collections.Generic.IEnumerable', STRING_TYPE.CleanClone())
 	private static final STREAM_RETURN_TYPE = TypeReference.Lift(System.IO.Stream)
 	private static final ARGS_DICT_TYPE = TypeReference.Lift(System.Collections.Generic.IDictionary[of string, string])
 
@@ -56,17 +87,27 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	private _mainGetFound as bool
 
+	private _postFound as bool
+
+	private _putFound as bool
+
+	private _deleteFound as bool
+
 	private _constructorFound as bool
 
 	private _singleGetMatch as bool
 
-	private _getMatches as bool
-
 	private _attr as WebBooAttribute
+
+	private _interpolationCount as int
+
+	private _validator as Method
 
 	def constructor(attr as WebBooAttribute):
 		super()
 		_attr = attr
+		if attr.Interpolations is not null:
+			_interpolationCount = attr.Interpolations.Count
 
 	override def OnClassDefinition(node as ClassDefinition):
 		node.BaseTypes.Reject({tr | tr.ToString() == 'object'})
@@ -89,11 +130,15 @@ private class WebBooTransformer(DepthFirstTransformer):
 			SetTemplateServer(node)
 		unless _mainGetFound:
 			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) does not define a default Get() method."))
-		BuildDispatch(node)
+		if _interpolationCount > 0:
+			BuildInterpolatedClass(node)
+		else:
+			BuildDispatch(node)
 		if _attr.Path is not null:
+			validator as Expression = (NullLiteralExpression() if _validator is null else [|$(ReferenceExpression(node.Name)).ValidInterpolation|])
 			var init = [|
 				initialization:
-					Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s)})
+					Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s)}, $validator)
 			|]
 			node.GetAncestor[of Module]().Globals.Add(init)
 
@@ -126,7 +171,8 @@ private class WebBooTransformer(DepthFirstTransformer):
 	override def OnMethodInvocationExpression(node as MethodInvocationExpression):
 		if node.Target.NodeType == NodeType.SuperLiteralExpression:
 			raise "Super constructor invocation should not pass arguments" unless node.Arguments.Count == 0
-			node.Arguments.Add([|context|])
+			node.Arguments.Add(ReferenceExpression('context'))
+			node.Arguments.Add(ReferenceExpression('session'))
 			_superFound = true
 
 	override def OnMethod(node as Method):
@@ -150,31 +196,42 @@ private class WebBooTransformer(DepthFirstTransformer):
 			raise "HTTP methods must be not be static."
 		if node.ReturnType is not null and not ((node.ReturnType.Matches(STRING_TYPE)) or (node.ReturnType.Matches(STREAM_RETURN_TYPE))):
 			raise "HTTP methods must return String or Stream"
-		node.Modifiers = node.Modifiers | TypeMemberModifiers.Override | TypeMemberModifiers.Public
+		node.Modifiers = node.Modifiers | TypeMemberModifiers.Public
+		node.Modifiers = node.Modifiers | TypeMemberModifiers.Override if _interpolationCount == 0
 		node.ReturnType = TypeReference.Lift(ResponseData)
+
+	private def IsValidInterpolation(node as Method, extras as int):
+		return true if _interpolationCount == 0
+		return false if node.Parameters.Count != _interpolationCount + extras
+		for i in range(_interpolationCount):
+			var interpolation = _attr.Interpolations[i]
+			var interpolationType = ('string' if interpolation.NodeType == NodeType.ReferenceExpression else (interpolation cast TryCastExpression).Type.ToString())
+			var param = node.Parameters[i]
+			var paramType = ('string' if param.Type is null else param.Type.ToString())
+			return false unless interpolationType.Equals(paramType)
+		return true
 
 	private def IsGetMethod(node as Method) as bool:
 		var args = node.Parameters
-		if args.Count == 0:
+		if args.Count == _interpolationCount:
+			return false unless IsValidInterpolation(node, 0)
 			_mainGetFound = true
 			return true
-		if args.Count == 1:
-			var arg1 = args[0]
+		if args.Count == _interpolationCount + 1:
+			return false unless IsValidInterpolation(node, 1)
+			var arg1 = args[_interpolationCount]
 			if arg1.Type is null:
 				arg1.Type = ARGS_DICT_TYPE.CleanClone()
 				return true
 			if arg1.Type.Matches(STRING_TYPE):
 				_singleGetMatch = true
 				return true
-			if arg1.Type.Matches(MATCHES_TYPE):
-				_getMatches = true
-				return true
 		return false
 
 	private def IsPostOrPutMethod(node as Method) as bool:
 		var args = node.Parameters
-		if args.Count == 1:
-			var arg1 = args[0]
+		if args.Count == _interpolationCount + 1:
+			var arg1 = args[_interpolationCount]
 			if arg1.Type is null:
 				arg1.Type = ARGS_DICT_TYPE.CleanClone()
 				return true
@@ -186,6 +243,7 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	private def OnPostMethod(node as Method):
 		return unless IsPostOrPutMethod(node)
+		_postFound = true
 		SetFlags(node)
 
 	private def OnHeadMethod(node as Method):
@@ -193,18 +251,13 @@ private class WebBooTransformer(DepthFirstTransformer):
 
 	private def OnPutMethod(node as Method):
 		return unless IsPostOrPutMethod(node)
+		_putFound = true
 		SetFlags(node)
 
 	private def OnDeleteMethod(node as Method):
-		if node.Parameters.Count == 0:
+		if node.Parameters.Count == _interpolationCount:
+			_deleteFound = true
 			SetFlags(node)
-
-	private def EnsureLinq(node as ClassDefinition):
-		var module = node.GetAncestor[of Module]()
-		unless module.Imports.Any({imp | imp.Expression.ToString() == 'System.Linq.Enumerable'}):
-			var newImport = [|import System.Linq.Enumerable|]
-			newImport.Entity = ImportedNamespace(newImport, My[of NameResolutionService].Instance.ResolveQualifiedName(newImport.Namespace))
-			module.Imports.Add(newImport)
 
 	private def BuildDispatch(node as ClassDefinition):
 		var dispatch = [|
@@ -212,33 +265,84 @@ private class WebBooTransformer(DepthFirstTransformer):
 				pass
 		|]
 		var body = dispatch.Body
-		EnsureMatchDispatch() if _singleGetMatch or _getMatches
-		if _attr.Regex is not null:
-			EnsureLinq(node)
-			body.Add([|var matches = $(_attr.Regex).Matches(path).Cast[of System.Text.RegularExpressions.Match]()\
-				.Select({m | return m.Value}).Where({s | return not string.IsNullOrEmpty(s)}).ToArray()|])
-			var noMatch = IfStatement([|matches.Length == 0|], Block(), Block())
-			noMatch.TrueBlock.Add([|return Get()|])
-			body.Add(noMatch)
-			body = noMatch.FalseBlock
-			if self._singleGetMatch:
-				var singleGet = IfStatement([|matches.Length == 1|], Block(), Block())
-				singleGet.TrueBlock.Add([|return Get(matches[0])|])
-				body.Add(singleGet)
-				body = singleGet.FalseBlock
-			body.Add([|return Get(matches)|])
-			unless _singleGetMatch or _getMatches:
-				CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) specifies a regex but no Get methods to match a regex"))
-		elif _attr.HasQueryString.Value:
+		if _attr.HasQueryString.Value:
 			body.Add([|return Get(ParseQueryString())|])
 		else:
 			body.Add([|return Get()|])
+		if _attr.FileServer.Value:
+			dispatch.Body = [|
+				if not string.IsNullOrEmpty(path):
+					return Get(path)
+				$body
+			|]
 		node.Members.Add(dispatch)
 
-	private def EnsureMatchDispatch():
-		if _attr.Regex is null:
-			_attr.Regex = RELiteralExpression('/(.*)/')
-		_getMatches = true
+	private def BuildInterpolatedClass(node as ClassDefinition):
+		BuildInterpolatedDispatchers(node)
+		BuildValidator(node)
+
+	private def BuildValidator(node as ClassDefinition):
+		var result = [|
+			internal static def ValidInterpolation(index as int, value as string) as bool:
+				return true
+		|]
+		ifst as IfStatement
+		for i in range(_interpolationCount):
+			var interpolation = _attr.Interpolations[i]
+			var interpolationType = ('string' if interpolation.NodeType == NodeType.ReferenceExpression else (interpolation cast TryCastExpression).Type.ToString())
+			continue if interpolationType == 'string'
+			var typeRef = ReferenceExpression(interpolationType)
+			var typeType = SimpleTypeReference(interpolationType)
+			var name = ReferenceExpression(CompilerContext.Current.GetUniqueName('interpolation'))
+			ifst = [|
+				if index == $i:
+					$(DeclarationStatement(Declaration(name.Name, typeType), null))
+					return $typeRef.TryParse(value, $name)
+				else:
+					$(ifst if ifst is not null else ReturnStatement(BoolLiteralExpression(true)))
+			|]
+			result.Body.Clear()
+			result.Body.Add(ifst)
+		node.Members.Add(result)
+		_validator = result
+
+	private def BuildInterpolatedDispatch(name as string, ppd as bool) as Method:
+		nameRef = ReferenceExpression("_Dispatch$(name)_")
+		var dispatch = [|
+			override protected def $nameRef(values as (string)) as ResponseData:
+				pass
+		|]
+		var body = dispatch.Body
+		
+		var invocation = MethodInvocationExpression(ReferenceExpression(name))
+		for i in range(_interpolationCount):
+			var expr = _attr.Interpolations[i]
+			if expr.NodeType == NodeType.ReferenceExpression:
+				invocation.Arguments.Add([|values[$i]|])
+			else:
+				var tce = expr cast TryCastExpression
+				var exprType = tce.Type
+				if exprType.ToString == 'string':
+					invocation.Arguments.Add([|values[$i]|])
+				else:
+					invocation.Arguments.Add([|$(ReferenceExpression(exprType.ToString())).Parse(values[$i])|])
+		if _attr.HasQueryString.Value:
+			invocation.Arguments.Add([|ParseQueryString()|])
+		elif ppd:
+			invocation.Arguments.Add([|ParsePostData()|])
+		body.Add([|return $invocation|])
+		return dispatch
+
+	private def BuildInterpolatedDispatchers(node as ClassDefinition):
+		node.Members.Add(BuildInterpolatedDispatch('Get', false))
+		var dummyGet = [| 
+			override protected def _DispatchGet_(path as string) as ResponseData:
+				raise System.NotImplementedException()
+		|]
+		node.Members.Add(dummyGet)
+		node.Members.Add(BuildInterpolatedDispatch('Post', true)) if _postFound
+		node.Members.Add(BuildInterpolatedDispatch('Put', true)) if _putFound
+		node.Members.Add(BuildInterpolatedDispatch('Delete', false)) if _deleteFound
 
 	private static final _fsDefaultGet = [|
 		override def Get() as ResponseData:
@@ -246,18 +350,20 @@ private class WebBooTransformer(DepthFirstTransformer):
 	|]
 
 	private def SetFileServer(node as ClassDefinition):
-		if _getMatches:
-			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a FileServer with a Get(string*) method already defined"))
+		if _interpolationCount > 0:
+			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a FileServer with an interpolated path"))
+			return
+		if _singleGetMatch:
+			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a FileServer with a Get(string) method already defined"))
 			return
 		var fs = [|
-			override public def Get(values as string*) as ResponseData:
-				return SendFile(string.Join('', values))
+			override public def Get(value as string) as ResponseData:
+				return SendFile(value)
 		|]
 		node.Members.Add(fs)
 		unless _mainGetFound:
 			node.Members.Add(_fsDefaultGet.CleanClone())
 			_mainGetFound = true
-		EnsureMatchDispatch()
 
 	private def GetStaticConstructor(node as ClassDefinition) as Constructor:
 		var result = node.Members.OfType[of Constructor]().Where({c | c.IsStatic}).SingleOrDefault()
@@ -283,9 +389,6 @@ private class WebBooTransformer(DepthFirstTransformer):
 	|]
 
 	private def SetTemplateServer(node as ClassDefinition) as Method:
-		if _getMatches:
-			CompilerContext.Current.Warnings.Add(CompilerWarning(node.LexicalInfo, "WebBoo class $(node.Name) can't be a TemplateServer with a Get(string*) method already defined"))
-			return null
 		PrepareClassConstructor(node)
 		var result = [|
 			override public def Get(values as string*) as ResponseData:
@@ -301,7 +404,6 @@ private class WebBooTransformer(DepthFirstTransformer):
 				return super._DispatchPost_(path)
 		|]
 		node.Members.Add(post)
-		EnsureMatchDispatch()
 		unless _mainGetFound:
 			node.Members.Add(_templateDefaultGet.CleanClone())
 			_mainGetFound = true

@@ -21,6 +21,8 @@ class WebBooClass:
 	[Getter(SessionData)]
 	private _session as Session
 
+	private _input as MemoryStream
+
 	def constructor(context as System.Net.HttpListenerContext, session as Session):
 		_request = context.Request
 		_response = context.Response
@@ -59,14 +61,39 @@ class WebBooClass:
 	virtual protected internal def _DispatchDelete_(path as string) as ResponseData:
 		return Delete()
 
+	//with interpolated values:
+	virtual protected internal def _DispatchGet_(values as (string)) as ResponseData:
+		return null
+
+	virtual protected internal def _DispatchPost_(values as (string)) as ResponseData:
+		return null
+
+	virtual protected internal def _DispatchPut_(values as (string)) as ResponseData:
+		return null
+
+	virtual protected internal def _DispatchDelete_(values as (string)) as ResponseData:
+		return null
+
 	protected def ParseQueryString() as System.Collections.Generic.IDictionary[of string, string]:
 		var result = System.Collections.Generic.Dictionary[of string, string]()
 		for key in Request.QueryString.AllKeys:
 			result[key] = Request.QueryString[key]
 		return result
 
+	protected def JsonData() as Newtonsoft.Json.Linq.JToken:
+		if Request.ContentType == 'application/json' and _input is not null:
+			_input.Position = 0
+			using reader = StreamReader(_input):
+				try:
+					return Newtonsoft.Json.Linq.JToken.Parse(reader.ReadToEnd())
+				except as Newtonsoft.Json.JsonReaderException:
+					return null
+		return null
+
 	protected def ParsePostData() as System.Collections.Generic.IDictionary[of string, string]:
-		var parser = HttpUtils.HttpContentParser(Request.InputStream)
+		_input = MemoryStream()
+		Request.InputStream.CopyTo(_input)
+		var parser = HttpUtils.HttpContentParser(_input)
 		if parser.Success:
 			return parser.Parameters
 		return ParseQueryString()
