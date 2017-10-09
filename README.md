@@ -7,25 +7,31 @@ Web.Boo is an attempt to recreate the same basic simplicity of implementation, u
 ### The WebBoo attribute
 You can create a server page by writing a class and tagging it with the `WebBoo` attribute, which will rewrite the class under the hood to respond to Web requests, and automatically register the class with the Web.Boo server.  Methods named `Get` and `Post` on such a class will respond to HTTP GET and POST requests, respectively.
 
-The WebBoo attribute constructor takes a string, defining the path the class will respond to requests for.  You can add an optional regex to capture further path data and pass it to a Get overload taking arguments.
+The WebBoo attribute constructor takes a string, defining the path the class will respond to requests for.  You can also use string interpolations in the path to capture further path data and pass it to a Get method taking arguments.
 
 ```
-[WebBoo('/', Regex: /(.*)/)]
+[WebBoo('/']
 class Hello:
 	def Get(): //default GET handler
-		return Get('World')
+		return 'Hello World!'
 
-	def Get(name as string): //responds to a single regex match
+[WebBoo("/$name/")]
+class HelloName:
+	def Get(name as string):
 		return "Hello, $(name)!"
 ```
 
 The following signatures are also valid:
 
 ```
-def Get(values as string*): //responds to multiple regex matches
 def Get(values as IDictionary[of string, string]): //responds to a query string
 def Post(values as IDictionary[of string, string]): //responds to a POST message, with form data or query string data passed in
+def Put(values as IDictionary[of string, string]): //responds to a PUT message, with form data or query string data passed in
+def Delete(): //responds to a DELETE message
+def Delete(values as IDictionary[of string, string]): //responds to a DELETE message with a query string
 ```
+
+The type declaration on the `values` parameter is optional; if none is given, the `WebBoo` attribute will insert it.  Also, if the class path has interpolations, the valid signatures above must have the interpolated parameters inserted first, with the `values` dictionary at the end.
 
 All `WebBoo`-annotated classes have access to the following properties:
 
@@ -60,10 +66,15 @@ If no `SessionStore` property is set, the `Session` property in `WebBoo`-annotat
 
 If the `SessionStore` property is set, it's also possible to assign an `Action[of Session]` function to `Application.SessionInitializer` which will be run for all newly-created sessions (ie. the first time a user visits the site) to initialize it with default data.
 
+### Error handling
+The server will handle a request for a missing resource by generating a 404 error, and unhandled exceptions will produce error code 500.  These will return generic error messages.  To give your server custom error code handling, use the `[ErrorHandler]` attribute.  This must be placed on a static method, or a method of a static class, with one or more valid error codes (4xx or 5xx) as arguments.  The method's signature must be: `static def [method name](code as int, request as HttpListenerRequest) as ResponseData`.  This will allow you to return a custom error page.
+
+In order to raise an HTTP error code other than 404 or 500, use the `Abort(code as int)` method.  (This will raise a `Boo.Web.AbortException`, so any catch-all exception handlers will cause `Abort()` to fail to work as intended.)  This can then be handled by a `ErrorHandler` method, if applicable.
+
 ### Feedback welcome
 Boo.Web requires an up-to-date Boo compiler to build, as it uses the new `initialization` macro under the hood.  Feel free to try it out, and to share any issues or potential improvements you come up with!
 
 ### TODO:
 HTTPS support.
-Web socket support. (Requires async/await support in the compiler.)
-Special templates for custom error pages.
+Web socket support.
+Authentication.
