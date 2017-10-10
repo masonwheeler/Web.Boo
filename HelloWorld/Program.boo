@@ -5,8 +5,10 @@ import Boo.Web
 [WebBoo('/')]
 class Hello:
 	def Get():
-		return Get('World')
+		return 'Hello World!'
 
+[WebBoo("/$name/")]
+class HelloName:
 	def Get(name as string):
 		return "Hello, $(name)!"
 
