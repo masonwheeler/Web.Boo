@@ -11,4 +11,4 @@ class Homepage:
 		return "Total visits: $visits"
 
 var store = DiskStore(System.IO.Path.Combine(WebBooClass.EXE_DIR, 'Sessions'))
-Application('http://localhost:2468/', SessionStore: store, SessionInitializer: {s as Session | s['Visits'] = '0'}).Run()
+Application(store, {s as Session | s['Visits'] = '0'}, 'http://localhost:2468/').Run()

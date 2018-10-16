@@ -16,11 +16,9 @@ internal interface IDispatcher:
 
 class Application:
 	
-	[Property(SessionStore)]
-	private _sessionStore as Store
+	private final _sessionStore as Store
 
-	[Property(SessionInitializer)]
-	private _sessionInitializer as Action[of Session]
+	private final _sessionInitializer as Action[of Session]
 
 	private class SubpathDispatcher(IDispatcher):
 		protected _pathMap = Dictionary[of string, IDispatcher]()
@@ -86,6 +84,9 @@ class Application:
 			elif context.Request.HttpMethod == 'DELETE':
 				result = handler._DispatchDelete_(string.Join('/', paths))
 				return true
+			elif context.Request.HttpMethod == 'OPTIONS':
+				result = handler.Options(string.Join('/', paths))
+				return true
 			return false
 
 	private class InterpolatedDispatcher(SubpathDispatcher, IDispatcher):
@@ -134,10 +135,9 @@ class Application:
 			_isInterpolated = isInterpolated
 	
 		def Dispatch(paths as (string), context as HttpListenerContext, s as Session, ref result as ResponseData) as bool:
-			assert paths.Length <= 1
 			_valueList.Clear()
 			_prev.Load(_valueList) if _prev is not null
-			_valueList.Add(paths[0]) if _isInterpolated
+			_valueList.Add(paths[-1]) if _isInterpolated
 			if _validator is not null:
 				for i in range(_valueList.Count):
 					return false unless _validator(i, _valueList[i])
@@ -155,6 +155,9 @@ class Application:
 				return true
 			elif context.Request.HttpMethod == 'DELETE':
 				result = handler._DispatchDelete_(values)
+				return true
+			elif context.Request.HttpMethod == 'OPTIONS':
+				result = handler.Options(string.Join('/', paths))
 				return true
 			return false
 		
@@ -192,12 +195,17 @@ class Application:
 			SubpathDispatcher.CurrentPath = pair.Key
 			_dispatcher.Register(subpaths, pair.Value)
 	
-	_prefixes as (string)
+	private final _prefixes as (string)
 	
 	public def constructor([Required] *prefixes as (string)):
 		raise "Application requires at least one prefix to run" if prefixes.Length == 0
 		_prefixes = prefixes
-	
+
+	public def constructor([Required] sessionStore as Store, [Required] sessionInitializer as Action[of Session], [Required] *prefixes as (string)):
+		self(*prefixes)
+		_sessionStore= sessionStore
+		_sessionInitializer = sessionInitializer
+
 	private def HandleResponse(result as ResponseData, response as HttpListenerResponse):
 		if result.AsString is not null:
 			using writer = System.IO.StreamWriter(response.OutputStream):
@@ -209,6 +217,10 @@ class Application:
 			response.ContentType = 'application/json'
 			using writer = System.IO.StreamWriter(response.OutputStream):
 				writer.Write(result.AsJson.ToString())
+				var jv = result.AsJson as Newtonsoft.Json.Linq.JValue
+				if jv is not null and jv.Value is null:
+					writer.Write('null')
+				else: writer.Write(result.AsJson.ToString())
 		elif result.AsRedirect is not null:
 			var red = result.AsRedirect
 			response.StatusCode = red.Code
@@ -244,30 +256,38 @@ class Application:
 		using writer = System.IO.StreamWriter(context.Response.OutputStream):
 				writer.Write(message)
 
+	private def HandleRequest(ar as IAsyncResult):
+		var listener = ar.AsyncState cast System.Net.HttpListener
+		var context = listener.EndGetContext(ar)
+		try:
+			var request = context.Request
+			result as ResponseData
+			var url = request.RawUrl.Split(*(char('?'),))[0]
+			var paths = url.Split(*(char('/'),))
+			paths = paths[:-1] if paths[paths.Length - 1] == ''
+			if DispatchData(paths, context, result):
+				if result is not null:
+					HandleResponse(result, context.Response)
+		except as FileNotFoundException:
+			SendError(context, 404)
+		except as DirectoryNotFoundException:
+			SendError(context, 404)
+		except a as AbortException:
+			SendError(context, a.Code)
+		except x as Exception:
+			SendError(context, 500)
+			print x
+		try:
+			context.Response.OutputStream.Close()
+		except as HttpListenerException:
+			pass
+
 	public def Run():
 		listener = System.Net.HttpListener()
 		for prefix in _prefixes:
 			listener.Prefixes.Add(prefix)
-		listener.Start()
 		LoadPaths()
+		listener.Start()
 		while true:
-			var context = listener.GetContext()
-			try:
-				var request = context.Request
-				result as ResponseData
-				var url = request.RawUrl.Split(*(char('?'),))[0]
-				var paths = url.Split(*(char('/'),))
-				paths = paths[:-1] if paths[paths.Length - 1] == ''
-				if DispatchData(paths, context, result):
-					if result is not null:
-						HandleResponse(result, context.Response)
-			except as FileNotFoundException:
-				SendError(context, 404)
-			except as DirectoryNotFoundException:
-				SendError(context, 404)
-			except a as AbortException:
-				SendError(context, a.Code)
-			except x as Exception:
-				SendError(context, 500)
-				print x
-			context.Response.OutputStream.Close()
+			var ar = listener.BeginGetContext(self.HandleRequest, listener)
+			ar.AsyncWaitHandle.WaitOne()

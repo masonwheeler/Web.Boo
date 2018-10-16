@@ -5,7 +5,6 @@ import Boo.Lang.Compiler
 import Boo.Lang.Compiler.Ast
 import Boo.Lang.Compiler.TypeSystem
 import Boo.Lang.Environments
-import Boo.Lang.Compiler.TypeSystem.Services
 
 //based on System.Net.HttpListener
 //see also https://bitbucket.org/lorenzopolidori/http-form-parser/src
@@ -136,24 +135,28 @@ private class WebBooTransformer(DepthFirstTransformer):
 			BuildDispatch(node)
 		if _attr.Path is not null:
 			validator as Expression = (NullLiteralExpression() if _validator is null else [|$(ReferenceExpression(node.Name)).ValidInterpolation|])
+			var registerNote = "Registering path ${_attr.Path}"
 			var init = [|
 				initialization:
-					Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s)}, $validator)
+					print $registerNote
+					Boo.Web.Application.RegisterWebBooClass($(_attr.Path), {r, s | return $(ReferenceExpression(node.Name))(r, s) as WebBooClass}, $validator)
 			|]
 			node.GetAncestor[of Module]().Globals.Add(init)
 
 	private def ProcessBaseTypes(baseTypes as TypeReferenceCollection):
-		var nrs = My[of NameResolutionService].Instance
-		def isInterface(t as IType):
-			return (nrs.Resolve(t.ToString(), EntityType.Type) cast IType)?.IsInterface
+		def isInterface(tr as TypeReference):
+			type as IType = tr.Entity
+			if type is null:
+				return false
+			return type.IsInterface
 		
 		if baseTypes.All(isInterface):
 			baseTypes.Insert(0, TypeReference.Lift(Boo.Web.WebBooClass))
 			return
 		
 		var baseType = baseTypes[0]
-		typeRef as IType = nrs.Resolve(baseType.ToString(), EntityType.Type)
-		if typeRef is null or not typeRef.IsAssignableFrom(My[of TypeSystemServices].Instance.Map(Boo.Web.WebBooClass)):
+		typeRef as IType = baseType.Entity
+		if typeRef is null or not My[of TypeSystemServices].Instance.Map(Boo.Web.WebBooClass).IsAssignableFrom(typeRef):
 			raise "$(baseType.ToString()) is not a valid WebBoo base class"
 
 	override def OnConstructor(node as Constructor):

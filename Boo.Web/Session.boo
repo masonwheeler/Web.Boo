@@ -72,6 +72,9 @@ Adapted from the web.py Session object
 	def ContainsKey(name as string):
 		return _data.ContainsKey(name)
 
+	Key as string:
+		get: return _sessionID?.Value
+
 	private def Update(value as Dictionary[of string, string]):
 		for pair in value:
 			self._data[pair.Key] = pair.Value
@@ -207,14 +210,14 @@ class Store:
 
 	protected def Decode(sessionData as string) as Dictionary[of string, string]:
 	"""decodes the data to get back the session dict """
-		var json = JObject.Parse(System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String(sessionData))) cast JObject
+		var json = JObject.Parse(System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String(sessionData)))
 		var result = Dictionary[of string, string]()
 		for pair as KeyValuePair[of string, JToken] in json:
 			result[pair.Key] = pair.Value.ToString()
 		return result
 
 class DiskStore(Store):
-	private _root as string
+	private final _root as string
 
 	def constructor(root as string):
 		# if the storage root doesn't exists, create it.
@@ -227,34 +230,39 @@ class DiskStore(Store):
 		return Path.Combine(_root, key)
 
 	override protected internal def Contains(key as string) as bool:
-		var path = self.GetPath(key)
-		return File.Exists(path)
+		lock self:
+			var path = self.GetPath(key)
+			return File.Exists(path)
 
 	override protected internal def Remove(key as string):
-		var path = self.GetPath(key)
-		File.Delete(path) if File.Exists(path)
+		lock self:
+			var path = self.GetPath(key)
+			File.Delete(path) if File.Exists(path)
 
 	self[key as string] as Dictionary[of string, string]):
 		override get:
-			var path = self.GetPath(key)
-	
-			if File.Exists(path):
-				var text = File.ReadAllText(path)
-				return self.Decode(text)
-			else:
-				raise ArgumentException(key)
+			lock self:
+				var path = self.GetPath(key)
+		
+				if File.Exists(path):
+					var text = File.ReadAllText(path)
+					return self.Decode(text)
+				else:
+					raise ArgumentException(key)
 		override set:
-			var path = self.GetPath(key)
-			var text = self.Encode(value)
-			try:
-				File.WriteAllText(path, text)
-			except as IOException:
-				pass
+			lock self:
+				var path = self.GetPath(key)
+				var text = self.Encode(value)
+				try:
+					File.WriteAllText(path, text)
+				except as IOException:
+					pass
 
 	override def Cleanup(timeout as timespan):
-		var now = DateTime.Now
-		for path in Directory.EnumerateFiles(self._root).Where({p | now - File.GetLastWriteTime(p) > timeout}).ToArray():
-			File.Delete(path)
+		lock self:
+			var now = DateTime.Now
+			for path in Directory.EnumerateFiles(self._root).Where({p | now - File.GetLastWriteTime(p) > timeout}).ToArray():
+				File.Delete(path)
 
 #TODO: Translate this once we've got database support
 /*
