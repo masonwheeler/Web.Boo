@@ -10,7 +10,7 @@ You can create a server page by writing a class and tagging it with the `WebBoo`
 The WebBoo attribute constructor takes a string, defining the path the class will respond to requests for.  You can also use string interpolations in the path to capture further path data and pass it to a Get method taking arguments.
 
 ```
-[WebBoo('/']
+[WebBoo('/')]
 class Hello:
 	def Get(): //default GET handler
 		return 'Hello World!'
